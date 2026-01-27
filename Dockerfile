@@ -67,6 +67,9 @@ WORKDIR /comfyui
 # Support for the network volume
 ADD src/extra_model_paths.yaml ./
 
+# Install SeedVR2 video upscaler node
+RUN comfy node install seedvr2_videoupscaler@2.5.24 --mode remote
+
 # Go back to the root
 WORKDIR /
 
@@ -102,16 +105,24 @@ ARG MODEL_TYPE=z-image-turbo
 WORKDIR /comfyui
 
 # Create necessary directories upfront
-RUN mkdir -p models/checkpoints models/vae models/unet models/clip models/text_encoders models/diffusion_models models/model_patches
+RUN mkdir -p models/checkpoints models/vae models/unet models/clip models/text_encoders models/diffusion_models models/model_patches models/loras
+
+# Install gdown for Google Drive downloads
+RUN uv pip install gdown
 
 # Download checkpoints/vae/unet/clip models to include in image based on model type
-
 RUN if [ "$MODEL_TYPE" = "z-image-turbo" ]; then \
       wget -q -O models/text_encoders/qwen_3_4b.safetensors https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors && \
       wget -q -O models/diffusion_models/z_image_turbo_bf16.safetensors https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors && \
       wget -q -O models/vae/ae.safetensors https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors && \
-      wget -q -O models/model_patches/Z-Image-Turbo-Fun-Controlnet-Union.safetensors https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union/resolve/main/Z-Image-Turbo-Fun-Controlnet-Union.safetensors; \
+      wget -q -O models/model_patches/Z-Image-Turbo-Fun-Controlnet-Union.safetensors https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union/resolve/main/Z-Image-Turbo-Fun-Controlnet-Union.safetensors && \
+      gdown 1YzyHBIAKGhe7VF5w6hTJrKdqdC9cq9pQ -O models/loras/RealisticSnapshot-Zimage-Turbov5.safetensors && \
+      gdown 1bRoyYbx__RyZCMeiO_eo6p864Ej1TMnQ -O models/loras/z_image_turbo_s4v4nn4h_lora.safetensors; \
     fi
+
+# Download SeedVR2 models
+RUN comfy model download --url "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/seedvr2_ema_7b_sharp_fp16.safetensors" --relative-path models/diffusion_models --filename seedvr2_ema_7b_sharp_fp16.safetensors
+RUN comfy model download --url "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/ema_vae_fp16.safetensors" --relative-path models/vae --filename ema_vae_fp16.safetensors
 
 # Stage 3: Final image
 FROM base AS final
