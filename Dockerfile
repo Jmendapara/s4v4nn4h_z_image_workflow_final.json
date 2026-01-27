@@ -22,6 +22,10 @@ RUN comfy model download --url https://huggingface.co/Comfy-Org/z_image_turbo/bl
 
 # copy all input data (like images or videos) into comfyui (uncomment and adjust if needed)
 # COPY input/ /comfyui/input/
+
+# Install RunPod SDK
+RUN pip install runpod
+
 # Copy the RunPod handler
 COPY handler.py /comfyui/handler.py
 

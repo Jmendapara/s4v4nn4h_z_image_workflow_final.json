@@ -1,5 +1,7 @@
 # s4v4nn4h_z_image_workflow_final.json
 
+[![Runpod](https://api.runpod.io/badge/Jmendapara/s4v4nn4h_z_image_workflow_final.json)](https://console.runpod.io/hub/Jmendapara/s4v4nn4h_z_image_workflow_final.json)
+
 Dockerized ComfyUI workflow: s4v4nn4h_z_image_workflow_final.json
 
 ## Contents
