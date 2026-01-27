@@ -1,58 +1,120 @@
-# clean base image containing only comfyui, comfy-cli and comfyui-manager
-FROM runpod/worker-comfyui:5.7.1-base
+# Build argument for base image selection
+ARG BASE_IMAGE=nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04
 
-# install custom nodes into comfyui (first node with --mode remote to fetch updated cache)
-RUN comfy node install seedvr2_videoupscaler@2.5.24 --mode remote
+# Stage 1: Base image with common dependencies
+FROM ${BASE_IMAGE} AS base
 
-# download models into comfyui
-RUN comfy model download --url "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/seedvr2_ema_7b_sharp_fp16.safetensors" --relative-path models/diffusion_models --filename seedvr2_ema_7b_sharp_fp16.safetensors
-RUN comfy model download --url "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/ema_vae_fp16.safetensors" --relative-path models/vae --filename ema_vae_fp16.safetensors
+# Build arguments for this stage with sensible defaults for standalone builds
+ARG COMFYUI_VERSION=latest
+ARG CUDA_VERSION_FOR_COMFY
+ARG ENABLE_PYTORCH_UPGRADE=false
+ARG PYTORCH_INDEX_URL
 
-# Download LoRA from Google Drive
-RUN pip install gdown && mkdir -p /comfyui/models/loras && gdown 1bRoyYbx__RyZCMeiO_eo6p864Ej1TMnQ -O /comfyui/models/loras/z_image_turbo_s4v4nn4h_lora.safetensors
+# Prevents prompts from packages asking for user input during installation
+ENV DEBIAN_FRONTEND=noninteractive
+# Prefer binary wheels over source distributions for faster pip installations
+ENV PIP_PREFER_BINARY=1
+# Ensures output from python is printed immediately to the terminal without buffering
+ENV PYTHONUNBUFFERED=1
+# Speed up some cmake builds
+ENV CMAKE_BUILD_PARALLEL_LEVEL=8
 
-# Download Z-Image Turbo
-RUN comfy model download --url "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors" --relative-path models/diffusion_models --filename z_image_turbo_bf16.safetensors
+# Install Python, git and other necessary tools
+RUN apt-get update && apt-get install -y \
+    python3.12 \
+    python3.12-venv \
+    git \
+    wget \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    ffmpeg \
+    && ln -sf /usr/bin/python3.12 /usr/bin/python \
+    && ln -sf /usr/bin/pip3 /usr/bin/pip
 
-#Downlaod Realistic Snapshot Lora
-RUN gdown 1YzyHBIAKGhe7VF5w6hTJrKdqdC9cq9pQ -O /comfyui/models/loras/RealisticSnapshot-Zimage-Turbov5.safetensors
+# Clean up to reduce image size
+RUN apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
-# Download Qwen CLIP (into subfolder models/clip/qwen)
-RUN comfy model download --url "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors" --relative-path models/clip --filename qwen_3_4b.safetensors
-# Patch ComfyUI to disable weights_only restriction for PyTorch 2.6 compatibility
-RUN sed -i 's/torch\.load(\([^,]*\),/torch.load(\1, weights_only=False,/g' /comfyui/comfy/model_management.py || true
+# Install uv (latest) using official installer and create isolated venv
+RUN wget -qO- https://astral.sh/uv/install.sh | sh \
+    && ln -s /root/.local/bin/uv /usr/local/bin/uv \
+    && ln -s /root/.local/bin/uvx /usr/local/bin/uvx \
+    && uv venv /opt/venv
 
-# Verify patch was applied
-RUN echo "=== Patch verification ===" && \
-    if grep -q "weights_only=False" /comfyui/comfy/model_management.py; then \
-        echo "✓ Patch successfully applied: weights_only=False found in model_management.py"; \
-        grep -n "weights_only=False" /comfyui/comfy/model_management.py | head -5; \
+# Use the virtual environment for all subsequent commands
+ENV PATH="/opt/venv/bin:${PATH}"
+
+# Install comfy-cli + dependencies needed by it to install ComfyUI
+RUN uv pip install comfy-cli pip setuptools wheel
+
+# Install ComfyUI
+RUN if [ -n "${CUDA_VERSION_FOR_COMFY}" ]; then \
+      /usr/bin/yes | comfy --workspace /comfyui install --version "${COMFYUI_VERSION}" --cuda-version "${CUDA_VERSION_FOR_COMFY}" --nvidia; \
     else \
-        echo "⚠ Patch may not have been applied, checking file contents..."; \
-        grep -n "torch.load" /comfyui/comfy/model_management.py | head -5; \
+      /usr/bin/yes | comfy --workspace /comfyui install --version "${COMFYUI_VERSION}" --nvidia; \
     fi
-# Download VAE (using HuggingFace CDN for proper file resolution)
-RUN comfy model download --url "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors" --relative-path models/vae --filename ae.safetensors
 
-# Log VAE file size and verify download
-RUN echo "=== VAE File Verification ===" && \
-    ls -lh /comfyui/models/vae/ae.safetensors && \
-    FILESIZE=$(stat -c%s /comfyui/models/vae/ae.safetensors) && \
-    echo "File size: $FILESIZE bytes" && \
-    if [ $FILESIZE -lt 1000 ]; then echo "⚠️  WARNING: VAE file is suspiciously small ($FILESIZE bytes)"; cat /comfyui/models/vae/ae.safetensors; fi
+# Upgrade PyTorch if needed (for newer CUDA versions)
+RUN if [ "$ENABLE_PYTORCH_UPGRADE" = "true" ]; then \
+      uv pip install --force-reinstall torch torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}; \
+    fi
 
+# Change working directory to ComfyUI
+WORKDIR /comfyui
 
-# copy all input data (like images or videos) into comfyui (uncomment and adjust if needed)
-# COPY input/ /comfyui/input/
+# Support for the network volume
+ADD src/extra_model_paths.yaml ./
 
-# Install RunPod SDK
-RUN pip install runpod
+# Go back to the root
+WORKDIR /
 
-# Copy the RunPod handler
-COPY handler.py /comfyui/handler.py
+# Install Python runtime dependencies for the handler
+RUN uv pip install runpod requests websocket-client
 
-# Copy test input to override default (must be at root for RunPod to find it)
-COPY test_input.json /test_input.json
+# Add application code and scripts
+ADD src/start.sh src/network_volume.py handler.py test_input.json ./
+RUN chmod +x /start.sh
 
-# Set the handler as the entrypoint
-ENV HANDLER_PATH=/comfyui/handler.py
+# Add script to install custom nodes
+COPY scripts/comfy-node-install.sh /usr/local/bin/comfy-node-install
+RUN chmod +x /usr/local/bin/comfy-node-install
+
+# Prevent pip from asking for confirmation during uninstall steps in custom nodes
+ENV PIP_NO_INPUT=1
+
+# Copy helper script to switch Manager network mode at container start
+COPY scripts/comfy-manager-set-mode.sh /usr/local/bin/comfy-manager-set-mode
+RUN chmod +x /usr/local/bin/comfy-manager-set-mode
+
+# Set the default command to run when starting the container
+CMD ["/start.sh"]
+
+# Stage 2: Download models
+FROM base AS downloader
+
+ARG HUGGINGFACE_ACCESS_TOKEN
+# Set default model type if none is provided
+ARG MODEL_TYPE=z-image-turbo
+
+# Change working directory to ComfyUI
+WORKDIR /comfyui
+
+# Create necessary directories upfront
+RUN mkdir -p models/checkpoints models/vae models/unet models/clip models/text_encoders models/diffusion_models models/model_patches
+
+# Download checkpoints/vae/unet/clip models to include in image based on model type
+
+RUN if [ "$MODEL_TYPE" = "z-image-turbo" ]; then \
+      wget -q -O models/text_encoders/qwen_3_4b.safetensors https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors && \
+      wget -q -O models/diffusion_models/z_image_turbo_bf16.safetensors https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors && \
+      wget -q -O models/vae/ae.safetensors https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors && \
+      wget -q -O models/model_patches/Z-Image-Turbo-Fun-Controlnet-Union.safetensors https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union/resolve/main/Z-Image-Turbo-Fun-Controlnet-Union.safetensors; \
+    fi
+
+# Stage 3: Final image
+FROM base AS final
+
+# Copy models from stage 2 to the final image
+COPY --from=downloader /comfyui/models /comfyui/models
