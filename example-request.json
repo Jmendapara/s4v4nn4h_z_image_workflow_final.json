@@ -1,0 +1,105 @@
+{
+  "input": {
+    "workflow": {
+      "21": {
+        "inputs": {
+          "value": -46152910560298
+        },
+        "class_type": "PrimitiveInt",
+        "_meta": {
+          "title": "PrimitiveInt"
+        }
+      },
+      "22": {
+        "inputs": {
+          "filename": "ema_vae_fp16.safetensors"
+        },
+        "class_type": "SeedVR2LoadVAEModel",
+        "_meta": {
+          "title": "SeedVR2LoadVAEModel"
+        }
+      },
+      "23": {
+        "inputs": {
+          "filename_prefix": "Upscaled",
+          "images": [
+            "26",
+            0
+          ]
+        },
+        "class_type": "SaveImage",
+        "_meta": {
+          "title": "SaveImage"
+        }
+      },
+      "24": {
+        "inputs": {
+          "filename": "seedvr2_ema_7b_sharp_fp16.safetensors"
+        },
+        "class_type": "SeedVR2LoadDiTModel",
+        "_meta": {
+          "title": "SeedVR2LoadDiTModel"
+        }
+      },
+      "26": {
+        "inputs": {
+          "value": 42,
+          "image": [
+            "28",
+            0
+          ],
+          "dit": [
+            "24",
+            0
+          ],
+          "vae": [
+            "22",
+            0
+          ]
+        },
+        "class_type": "SeedVR2VideoUpscaler",
+        "_meta": {
+          "title": "SeedVR2VideoUpscaler"
+        }
+      },
+      "28": {
+        "inputs": {
+          "text": [
+            "29",
+            0
+          ],
+          "seed": [
+            "21",
+            0
+          ]
+        },
+        "class_type": "91e8644f-d9ff-4c89-8c03-7745d1a82a6d",
+        "_meta": {
+          "title": "91e8644f-d9ff-4c89-8c03-7745d1a82a6d"
+        }
+      },
+      "29": {
+        "inputs": {
+          "filename": "s4v4nn4h, blonde hair, hazel eyes, brown eyebrows, light freckles around the nose.\n\nsharp detail in eyes, realistic eyes, real reflections in eyes \n\ntrue-to-scale, realistic human-scale dimensions\n\nno extra limbs, no extra fingers, no missing limbs, no deformed hands, no mutated hands, no fused fingers, no disfigured, no bad anatomy, no cloned face, no unnatural poses\n\nA woman stands in the center of a wide alpine meadow filled with swaying golden tall grass and small clusters of moss-covered rocks. The background features distant, soft-focus jagged mountain peaks under a clear blue sky. The overall scene captures the quiet stillness of a high-altitude afternoon during the peak of summer. lighting: Bright, direct afternoon sunlight hits her from the front, casting soft shadows behind her and highlighting the textures of her clothing. The light is warm and golden, emphasizing the earthy tones of the environment without any harsh glare or silhouettes. The sky is bright and serves as a vibrant backdrop that makes the subject pop. pose: She stands with her weight shifted onto her right leg, while her left leg is slightly bent at the knee with her toes resting on a flat stone. Her arms are raised comfortably to adjust a silk scarf on her head, with elbows pointed outward and fingers delicately tucked into the fabric. Her posture is relaxed and tall, mirroring the vertical lines of the surrounding pines. clothing: She wears a hand-crocheted bikini top in a deep terracotta orange featuring intricate shell-stitch patterns. For bottoms, she has on high-waisted linen trousers in a pale oatmeal color that drape loosely around her ankles. A small silk headscarf in a dusty indigo floral print is tied over her hair. vibes: Earthy, adventurous, and serene. The image feels like a documented moment of a peaceful solo journey through the wilderness. It balances a sense of rugged exploration with a soft, feminine aesthetic. facial expression: She has a soft, closed-mouth smile while looking slightly off-camera toward the horizon. Her eyes are narrowed slightly against the brightness of the sun, giving her a look of genuine contentment. Her expression is calm, reflecting the stillness of the mountain air. type of shot (composition and framing): A full-body medium-long shot that captures her from head to toe while including a significant portion of the meadow. She is centered in the frame to create a sense of balance. The camera is positioned at eye level to maintain an intimate, personal perspective. camera details: Shot on a 35mm film camera with a slight grain and natural color saturation. The lens has a shallow depth of field, keeping the woman in sharp focus while the distant mountains are softly blurred. The colors are warm, leaning into the oranges and greens of the landscape.\n\n\namateur digital snapshot, candid, smartphone capture, high ISO noise, visible pores, visible vellus hair, subsurface scattering, detailed skin texture, wide-angle lens, barrel distortion, chromatic aberration, depth of field\n"
+        },
+        "class_type": "PrimitiveStringMultiline",
+        "_meta": {
+          "title": "Prompt"
+        }
+      },
+      "31": {
+        "inputs": {
+          "filename_prefix": "ComfyUI",
+          "images": [
+            "28",
+            0
+          ]
+        },
+        "class_type": "SaveImage",
+        "_meta": {
+          "title": "SaveImage"
+        }
+      }
+    }
+  }
+}
