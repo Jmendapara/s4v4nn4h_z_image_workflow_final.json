@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from handler import handler
 
 # Load example request
-with open("example-request.json", "r") as f:
+with open("test_input.json", "r") as f:
     example_request = json.load(f)
 
 # Test the handler
