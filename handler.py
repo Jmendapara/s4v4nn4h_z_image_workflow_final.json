@@ -1,5 +1,4 @@
 import json
-import runpod
 import logging
 from typing import Any, Dict
 
@@ -57,4 +56,28 @@ def handler(event: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # Required: Start the RunPod serverless handler
-runpod.serverless.start({"handler": handler})
+try:
+    import runpod
+    runpod.serverless.start({"handler": handler})
+except ImportError:
+    # If runpod is not installed, allow testing with test_input.json or --test_input flag
+    if __name__ == "__main__":
+        import sys
+        
+        # Support for --test_input flag
+        test_input = None
+        if "--test_input" in sys.argv:
+            idx = sys.argv.index("--test_input")
+            if idx + 1 < len(sys.argv):
+                test_input = json.loads(sys.argv[idx + 1])
+        
+        # If no --test_input flag, try to load from test_input.json
+        if test_input is None:
+            try:
+                with open("test_input.json", "r") as f:
+                    test_input = json.load(f)
+            except FileNotFoundError:
+                test_input = {"input": {}}
+        
+        result = handler(test_input)
+        print(json.dumps(result, indent=2))

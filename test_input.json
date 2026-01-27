@@ -1,0 +1,105 @@
+{
+  "input": {
+    "workflow": {
+      "21": {
+        "inputs": {
+          "value": -46152910560298
+        },
+        "class_type": "PrimitiveInt",
+        "_meta": {
+          "title": "PrimitiveInt"
+        }
+      },
+      "22": {
+        "inputs": {
+          "filename": "ema_vae_fp16.safetensors"
+        },
+        "class_type": "SeedVR2LoadVAEModel",
+        "_meta": {
+          "title": "SeedVR2LoadVAEModel"
+        }
+      },
+      "23": {
+        "inputs": {
+          "filename_prefix": "Upscaled",
+          "images": [
+            "26",
+            0
+          ]
+        },
+        "class_type": "SaveImage",
+        "_meta": {
+          "title": "SaveImage"
+        }
+      },
+      "24": {
+        "inputs": {
+          "filename": "seedvr2_ema_7b_sharp_fp16.safetensors"
+        },
+        "class_type": "SeedVR2LoadDiTModel",
+        "_meta": {
+          "title": "SeedVR2LoadDiTModel"
+        }
+      },
+      "26": {
+        "inputs": {
+          "value": 42,
+          "image": [
+            "28",
+            0
+          ],
+          "dit": [
+            "24",
+            0
+          ],
+          "vae": [
+            "22",
+            0
+          ]
+        },
+        "class_type": "SeedVR2VideoUpscaler",
+        "_meta": {
+          "title": "SeedVR2VideoUpscaler"
+        }
+      },
+      "28": {
+        "inputs": {
+          "text": [
+            "29",
+            0
+          ],
+          "seed": [
+            "21",
+            0
+          ]
+        },
+        "class_type": "91e8644f-d9ff-4c89-8c03-7745d1a82a6d",
+        "_meta": {
+          "title": "91e8644f-d9ff-4c89-8c03-7745d1a82a6d"
+        }
+      },
+      "29": {
+        "inputs": {
+          "filename": "test prompt"
+        },
+        "class_type": "PrimitiveStringMultiline",
+        "_meta": {
+          "title": "Prompt"
+        }
+      },
+      "31": {
+        "inputs": {
+          "filename_prefix": "ComfyUI",
+          "images": [
+            "28",
+            0
+          ]
+        },
+        "class_type": "SaveImage",
+        "_meta": {
+          "title": "SaveImage"
+        }
+      }
+    }
+  }
+}
