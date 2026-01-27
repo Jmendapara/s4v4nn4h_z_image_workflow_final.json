@@ -1,5 +1,5 @@
 # clean base image containing only comfyui, comfy-cli and comfyui-manager
-FROM runpod/worker-comfyui:5.5.1-base
+FROM runpod/worker-comfyui:5.7.1-base
 
 # install custom nodes into comfyui (first node with --mode remote to fetch updated cache)
 RUN comfy node install seedvr2_videoupscaler@2.5.24 --mode remote
@@ -14,8 +14,11 @@ RUN pip install gdown && mkdir -p /comfyui/models/loras && gdown 1bRoyYbx__RyZCM
 # Download Z-Image Turbo
 RUN comfy model download --url "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors" --relative-path models/diffusion_models --filename z_image_turbo_bf16.safetensors
 
+#Downlaod Realistic Snapshot Lora
+RUN gdown 1YzyHBIAKGhe7VF5w6hTJrKdqdC9cq9pQ -O /comfyui/models/loras/RealisticSnapshot-Zimage-Turbov5.safetensors
+
 # Download Qwen CLIP (into subfolder models/clip/qwen)
-RUN comfy model download --url "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors" --relative-path models/clip/qwen --filename qwen_2.5_vl_7b_fp8_scaled.safetensors
+RUN comfy model download --url "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors" --relative-path models/clip --filename qwen_3_4b.safetensors
 # Patch ComfyUI to disable weights_only restriction for PyTorch 2.6 compatibility
 RUN sed -i 's/torch\.load(\([^,]*\),/torch.load(\1, weights_only=False,/g' /comfyui/comfy/model_management.py || true
 
