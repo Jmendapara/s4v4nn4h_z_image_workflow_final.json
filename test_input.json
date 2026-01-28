@@ -80,8 +80,8 @@
   },
   "28:13": {
     "inputs": {
-      "width": 1536,
-      "height": 1920,
+      "width": 1024,
+      "height": 1024,
       "batch_size": 1
     },
     "class_type": "EmptySD3LatentImage",
@@ -121,7 +121,7 @@
   "28:28": {
     "inputs": {
       "unet_name": "z_image_turbo_bf16.safetensors",
-      "weight_dtype": "default"
+      "weight_dtype": "fp8_e4m3fn"
     },
     "class_type": "UNETLoader",
     "_meta": {
