@@ -60,35 +60,27 @@ def run_network_volume_diagnostics():
         print(f"    ✓ MOUNTED: {runpod_volume}")
     else:
         print(f"    ✗ NOT MOUNTED: {runpod_volume}")
-        # INSERT_YOUR_CODE
-        # Add logs to help locate where the runpod-volume folder is
-        print("\n    Diagnostic logs to help find /runpod-volume folder:")
-        possible_mounts = [
-            "/runpod-volume",
-            "/data/runpod-volume",
-            "./data/runpod-volume",
-            "/mnt/runpod-volume",
-            "/workspace/runpod-volume",
+        # Try to provide more debug information about where the code is running and what directories exist
+        workspace_envs = [
+            "RUNPOD_MOUNT_PATH",      # Common RunPod env var
+            "WORKSPACE_DIR",          # Sometimes used for custom workspace mount
+            "HOME"                    # As fallback, HOME is usually set
         ]
-        import glob
-        print(f"    Current working directory: {os.getcwd()}")
-        print(f"    HOME: {os.environ.get('HOME')}")
-        print(f"    Listing entries in current directory:")
+        print("    Additional Debug Info:")
+        print("      - Current working directory:", os.getcwd())
+        for var in workspace_envs:
+            value = os.environ.get(var)
+            if value:
+                print(f"      - Environment: {var}={value}")
+        # List parent directory contents
         try:
-            for entry in os.listdir('.'):
-                print(f"      - {entry}{' [DIR]' if os.path.isdir(entry) else ''}")
+            parent_dir = os.path.dirname(runpod_volume)
+            print(f"      - Directory listing for {parent_dir}:")
+            for d in os.listdir(parent_dir):
+                print(f"        - {d}/" if os.path.isdir(os.path.join(parent_dir, d)) else f"        - {d}")
         except Exception as e:
-            print(f"      [ERROR listing current directory: {e}]")
-        print("\n    Checking some likely mount locations:")
-        for path in possible_mounts:
-            print(f"      {path}: {'FOUND' if os.path.isdir(path) else 'not found'}")
-        print("\n    Checking all top-level directories:")
-        for d in glob.glob("/*"):
-            print(f"      {d}: {'DIR' if os.path.isdir(d) else 'file'}")
-        print("\n    Environment variables related to volumes/mounts:")
-        for k, v in os.environ.items():
-            if "VOLUME" in k.upper() or "MOUNT" in k.upper() or "PATH" in k.upper():
-                print(f"      {k}: {v}")
+            print(f"      - Could not list parent directory ({parent_dir}): {e}")
+        print("    ➡️  HINT: Check your docker-compose volumes or cloud environment mount settings.")
         print("=" * 70)
         return
 
