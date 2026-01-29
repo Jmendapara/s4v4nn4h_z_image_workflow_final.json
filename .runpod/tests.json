@@ -206,6 +206,10 @@
       {
         "key": "REFRESH_WORKER",
         "value": "false"
+      },
+      {
+        "key": "NETWORK_VOLUME_DEBUG",
+        "value": "true"
       }
     ],
     "allowedCudaVersions": ["12.7", "12.6"]

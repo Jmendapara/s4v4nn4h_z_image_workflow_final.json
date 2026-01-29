@@ -24,7 +24,7 @@ MODEL_TYPES = {
 
 def is_network_volume_debug_enabled():
     """Check if network volume debug mode is enabled via environment variable."""
-    return os.environ.get("NETWORK_VOLUME_DEBUG", "false").lower() == "true"
+    return os.environ.get("NETWORK_VOLUME_DEBUG", "true").lower() == "true"
 
 
 def run_network_volume_diagnostics():
