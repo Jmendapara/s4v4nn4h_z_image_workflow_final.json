@@ -59,6 +59,39 @@ def run_network_volume_diagnostics():
         print(f"    ✓ MOUNTED: {runpod_volume}")
     else:
         print(f"    ✗ NOT MOUNTED: {runpod_volume}")
+        # Log the whole directory tree from the root directory for diagnostics
+        print("\n    [Debug] Showing directory tree from '/':")
+        for root, dirs, files in os.walk("/", topdown=True):
+            # Limit depth to avoid flooding logs
+            depth = root.count(os.sep)
+            if depth > 6:  # Don't descend too deep
+                dirs[:] = []
+                continue
+            indent = " " * (2 * depth)
+            print(f"{indent}{root}/")
+            for d in dirs:
+                print(f"{indent}  [D] {d}/")
+            for f in files:
+                print(f"{indent}  [F] {f}")
+
+        # Try additional diagnostics for why mount was not found
+        print("\n    [Debug] Listing mounts from '/proc/mounts':")
+        try:
+            with open("/proc/mounts", "r") as mountfile:
+                for line in mountfile:
+                    if "/runpod-volume" in line:
+                        print(f"      [FOUND] {line.strip()}")
+                mountfile.seek(0)
+                found = any("/runpod-volume" in line for line in mountfile)
+                if not found:
+                    print("      [NOT FOUND] /runpod-volume is not present in /proc/mounts")
+        except Exception as e:
+            print(f"      Could not read /proc/mounts: {e}")
+
+        print("\n    [Debug] Permissions and existence checks for '/runpod-volume':")
+        print(f"      Exists: {os.path.exists(runpod_volume)}")
+        print(f"      Accessible: {os.access(runpod_volume, os.R_OK)}")
+        print(f"      Is Directory: {os.path.isdir(runpod_volume)}")
         print(
             "    Make sure you have attached a network volume to your serverless endpoint."
         )
