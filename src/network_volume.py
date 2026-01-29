@@ -60,42 +60,35 @@ def run_network_volume_diagnostics():
         print(f"    ✓ MOUNTED: {runpod_volume}")
     else:
         print(f"    ✗ NOT MOUNTED: {runpod_volume}")
-        # Log the whole directory tree from the root directory for diagnostics
-        print("\n    [Debug] Showing directory tree from '/':")
-        for root, dirs, files in os.walk("/", topdown=True):
-            # Limit depth to avoid flooding logs
-            depth = root.count(os.sep)
-            if depth > 6:  # Don't descend too deep
-                dirs[:] = []
-                continue
-            indent = " " * (2 * depth)
-            print(f"{indent}{root}/")
-            for d in dirs:
-                print(f"{indent}  [D] {d}/")
-            for f in files:
-                print(f"{indent}  [F] {f}")
-
-        # Try additional diagnostics for why mount was not found
-        print("\n    [Debug] Listing mounts from '/proc/mounts':")
+        # INSERT_YOUR_CODE
+        # Add logs to help locate where the runpod-volume folder is
+        print("\n    Diagnostic logs to help find /runpod-volume folder:")
+        possible_mounts = [
+            "/runpod-volume",
+            "/data/runpod-volume",
+            "./data/runpod-volume",
+            "/mnt/runpod-volume",
+            "/workspace/runpod-volume",
+        ]
+        import glob
+        print(f"    Current working directory: {os.getcwd()}")
+        print(f"    HOME: {os.environ.get('HOME')}")
+        print(f"    Listing entries in current directory:")
         try:
-            with open("/proc/mounts", "r") as mountfile:
-                for line in mountfile:
-                    if "/runpod-volume" in line:
-                        print(f"      [FOUND] {line.strip()}")
-                mountfile.seek(0)
-                found = any("/runpod-volume" in line for line in mountfile)
-                if not found:
-                    print("      [NOT FOUND] /runpod-volume is not present in /proc/mounts")
+            for entry in os.listdir('.'):
+                print(f"      - {entry}{' [DIR]' if os.path.isdir(entry) else ''}")
         except Exception as e:
-            print(f"      Could not read /proc/mounts: {e}")
-
-        print("\n    [Debug] Permissions and existence checks for '/runpod-volume':")
-        print(f"      Exists: {os.path.exists(runpod_volume)}")
-        print(f"      Accessible: {os.access(runpod_volume, os.R_OK)}")
-        print(f"      Is Directory: {os.path.isdir(runpod_volume)}")
-        print(
-            "    Make sure you have attached a network volume to your serverless endpoint."
-        )
+            print(f"      [ERROR listing current directory: {e}]")
+        print("\n    Checking some likely mount locations:")
+        for path in possible_mounts:
+            print(f"      {path}: {'FOUND' if os.path.isdir(path) else 'not found'}")
+        print("\n    Checking all top-level directories:")
+        for d in glob.glob("/*"):
+            print(f"      {d}: {'DIR' if os.path.isdir(d) else 'file'}")
+        print("\n    Environment variables related to volumes/mounts:")
+        for k, v in os.environ.items():
+            if "VOLUME" in k.upper() or "MOUNT" in k.upper() or "PATH" in k.upper():
+                print(f"      {k}: {v}")
         print("=" * 70)
         return
 
