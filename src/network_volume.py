@@ -39,7 +39,7 @@ def run_network_volume_diagnostics():
     # Root directory contents – all folders up to 3 layers deep (for debugging)
     print("\n[0] Root directory (/) contents (folders, up to 3 layers deep):")
     try:
-        max_depth = 3
+        max_depth = 2
         for dirpath, dirnames, _ in os.walk("/", topdown=True):
             depth = len([p for p in dirpath.split(os.sep) if p])
             if depth > max_depth:
