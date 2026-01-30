@@ -35,7 +35,16 @@ def run_network_volume_diagnostics():
     print("=" * 70)
     print("NETWORK VOLUME DIAGNOSTICS (NETWORK_VOLUME_DEBUG=true)")
     print("=" * 70)
-    
+
+    # Root directory contents (always log for debugging)
+    print("\n[0] Root directory (/) contents:")
+    try:
+        for name in sorted(os.listdir("/")):
+            path = os.path.join("/", name)
+            suffix = " [DIR]" if os.path.isdir(path) else ""
+            print(f"      - {name}{suffix}")
+    except Exception as e:
+        print(f"      Could not list /: {e}")
 
     # Check extra_model_paths.yaml
     extra_model_paths_file = "/comfyui/extra_model_paths.yaml"
@@ -60,27 +69,29 @@ def run_network_volume_diagnostics():
         print(f"    ✓ MOUNTED: {runpod_volume}")
     else:
         print(f"    ✗ NOT MOUNTED: {runpod_volume}")
-        # Try to provide more debug information about where the code is running and what directories exist
-        workspace_envs = [
-            "RUNPOD_MOUNT_PATH",      # Common RunPod env var
-            "WORKSPACE_DIR",          # Sometimes used for custom workspace mount
-            "HOME"                    # As fallback, HOME is usually set
-        ]
+        if os.path.isdir("/workspace"):
+            print("    ℹ️  /workspace exists (Pods use this; serverless uses /runpod-volume).")
+        print(
+            "    If the volume is attached: save the endpoint and ensure a NEW worker runs"
+        )
+        print(
+            "    (existing workers do not get the volume). Scale to zero, run a job, or wait"
+        )
+        print("    for cold start. See docs.runpod.io/serverless/storage/network-volumes")
+        # RunPod-related env vars (may reveal alternate mount path)
+        runpod_vars = [k for k in os.environ if "RUNPOD" in k or "VOLUME" in k or "MOUNT" in k]
+        if runpod_vars:
+            print("    RunPod/volume-related env:")
+            for var in sorted(runpod_vars):
+                print(f"      - {var}={os.environ[var]}")
         print("    Additional Debug Info:")
         print("      - Current working directory:", os.getcwd())
-        for var in workspace_envs:
+        for var in ["RUNPOD_MOUNT_PATH", "WORKSPACE_DIR", "HOME"]:
             value = os.environ.get(var)
             if value:
-                print(f"      - Environment: {var}={value}")
-        # List parent directory contents
-        try:
-            parent_dir = os.path.dirname(runpod_volume)
-            print(f"      - Directory listing for {parent_dir}:")
-            for d in os.listdir(parent_dir):
-                print(f"        - {d}/" if os.path.isdir(os.path.join(parent_dir, d)) else f"        - {d}")
-        except Exception as e:
-            print(f"      - Could not list parent directory ({parent_dir}): {e}")
-        print("    ➡️  HINT: Check your docker-compose volumes or cloud environment mount settings.")
+                print(f"      - {var}={value}")
+        print("      - Root (/) contents: see [0] above.")
+        print("    ➡️  HINT: Check docker-compose volumes or RunPod endpoint Network Volume.")
         print("=" * 70)
         return
 
