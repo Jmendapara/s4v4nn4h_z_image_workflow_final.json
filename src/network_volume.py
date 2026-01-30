@@ -36,15 +36,19 @@ def run_network_volume_diagnostics():
     print("NETWORK VOLUME DIAGNOSTICS (NETWORK_VOLUME_DEBUG=true)")
     print("=" * 70)
 
-    # Root directory contents (always log for debugging)
-    print("\n[0] Root directory (/) contents:")
+    # Root directory contents – all folders up to 3 layers deep (for debugging)
+    print("\n[0] Root directory (/) contents (folders, up to 3 layers deep):")
     try:
-        for name in sorted(os.listdir("/")):
-            path = os.path.join("/", name)
-            suffix = " [DIR]" if os.path.isdir(path) else ""
-            print(f"      - {name}{suffix}")
+        max_depth = 3
+        for dirpath, dirnames, _ in os.walk("/", topdown=True):
+            depth = len([p for p in dirpath.split(os.sep) if p])
+            if depth > max_depth:
+                continue
+            print(f"      - {dirpath or '/'}")
+            if depth >= max_depth:
+                dirnames.clear()  # do not descend further
     except Exception as e:
-        print(f"      Could not list /: {e}")
+        print(f"      Could not walk /: {e}")
 
     # Check extra_model_paths.yaml
     extra_model_paths_file = "/comfyui/extra_model_paths.yaml"
