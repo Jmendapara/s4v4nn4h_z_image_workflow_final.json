@@ -5,8 +5,8 @@
       "force_reload": false,
       "attention_impl": "sdpa",
       "moe_impl": "eager",
-      "vram_reserve_gb": 12.0,
-      "blocks_to_swap": 0
+      "vram_reserve_gb": 5.0,
+      "blocks_to_swap": 20
     },
     "class_type": "HunyuanInstructLoader",
     "_meta": {

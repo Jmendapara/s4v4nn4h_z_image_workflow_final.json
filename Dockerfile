@@ -158,6 +158,12 @@ RUN if [ "$MODEL_TYPE" = "z-image-turbo" ]; then \
       wget -q -O models/model_patches/Z-Image-Turbo-Fun-Controlnet-Union.safetensors https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union/resolve/main/Z-Image-Turbo-Fun-Controlnet-Union.safetensors; \
     fi
 
+RUN if [ "$MODEL_TYPE" = "hunyuan-instruct-nf4" ]; then \
+      uv pip install "huggingface_hub[hf_xet]" && \
+      python3 -c "from huggingface_hub import snapshot_download; snapshot_download('EricRollei/HunyuanImage-3.0-Instruct-Distil-NF4-v2', local_dir='/comfyui/models/HunyuanImage-3.0-Instruct-Distil-NF4')" && \
+      ln -s HunyuanImage-3.0-Instruct-Distil-NF4 models/HunyuanImage-3.0-Instruct-Distil-NF4-v2; \
+    fi
+
 # Stage 3: Final image
 FROM base AS final
 
