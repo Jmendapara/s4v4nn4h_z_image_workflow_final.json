@@ -7,33 +7,46 @@ export LD_PRELOAD="${TCMALLOC}"
 # Ensure ComfyUI-Manager runs in offline network mode inside the container
 comfy-manager-set-mode offline || echo "worker-comfyui - Could not set ComfyUI-Manager network_mode" >&2
 
-# Symlink Hunyuan model directories from the network volume so the
-# HunyuanInstructLoader can find them. We link into two locations:
-#   /comfyui/models/<name>  — for the scanner (searches models_dir)
-#   /comfyui/<name>         — fallback: bare name resolves from cwd /comfyui
-if [ -d "/runpod-volume/models" ]; then
-    for dir in /runpod-volume/models/HunyuanImage-3.0-*; do
+# ---------- Diagnostics: network-volume detection ----------
+echo "worker-comfyui: Detecting network volume..."
+echo "  /runpod-volume exists: $([ -d /runpod-volume ] && echo YES || echo NO)"
+echo "  /runpod-volume/models exists: $([ -d /runpod-volume/models ] && echo YES || echo NO)"
+echo "  /workspace exists: $([ -d /workspace ] && echo YES || echo NO)"
+echo "  /workspace/models exists: $([ -d /workspace/models ] && echo YES || echo NO)"
+ls -la /runpod-volume/models/ 2>/dev/null || echo "  (cannot list /runpod-volume/models/)"
+ls -la /workspace/models/ 2>/dev/null || echo "  (cannot list /workspace/models/)"
+
+# ---------- Symlink Hunyuan models into ComfyUI search paths ----------
+# Check both possible RunPod volume mount points.
+HUNYUAN_FOUND=0
+for vol_base in /runpod-volume /workspace; do
+    for dir in "${vol_base}"/models/HunyuanImage-3.0-*; do
         [ -d "$dir" ] || continue
+        HUNYUAN_FOUND=1
         name="$(basename "$dir")"
+        echo "worker-comfyui: Found model ${name} at ${dir}"
 
         for prefix in /comfyui/models /comfyui; do
             target="${prefix}/${name}"
             if [ ! -e "$target" ]; then
                 ln -s "$dir" "$target"
-                echo "worker-comfyui: Linked ${name} -> ${target}"
+                echo "worker-comfyui: Linked -> ${target}"
             fi
-            # Also create alias without version suffix (-v2 → stripped)
             stripped="$(echo "$name" | sed 's/-v[0-9]*$//')"
-            if [ "$stripped" != "$name" ]; then
-                alias="${prefix}/${stripped}"
-                if [ ! -e "$alias" ]; then
-                    ln -s "$dir" "$alias"
-                    echo "worker-comfyui: Linked ${stripped} (alias) -> ${alias}"
-                fi
+            if [ "$stripped" != "$name" ] && [ ! -e "${prefix}/${stripped}" ]; then
+                ln -s "$dir" "${prefix}/${stripped}"
+                echo "worker-comfyui: Linked alias -> ${prefix}/${stripped}"
             fi
         done
     done
+done
+
+if [ "$HUNYUAN_FOUND" -eq 0 ]; then
+    echo "worker-comfyui: WARNING — no HunyuanImage-3.0-* dirs found on any volume!"
 fi
+
+echo "worker-comfyui: /comfyui/models/ listing:"
+ls -la /comfyui/models/ 2>/dev/null || echo "  (empty or missing)"
 
 echo "worker-comfyui: Starting ComfyUI"
 
