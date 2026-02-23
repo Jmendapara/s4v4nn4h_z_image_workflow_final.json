@@ -154,6 +154,22 @@ target "z-image-turbo" {
   inherits = ["base"]
 }
 
+target "hunyuan-instruct-nf4" {
+  context = "."
+  dockerfile = "Dockerfile"
+  target = "final"
+  args = {
+    BASE_IMAGE = "${BASE_IMAGE}"
+    COMFYUI_VERSION = "${COMFYUI_VERSION}"
+    CUDA_VERSION_FOR_COMFY = "${CUDA_VERSION_FOR_COMFY}"
+    ENABLE_PYTORCH_UPGRADE = "${ENABLE_PYTORCH_UPGRADE}"
+    PYTORCH_INDEX_URL = "${PYTORCH_INDEX_URL}"
+    MODEL_TYPE = "hunyuan-instruct-nf4"
+  }
+  tags = ["${DOCKERHUB_REPO}/${DOCKERHUB_IMG}:${RELEASE_VERSION}-hunyuan-instruct-nf4"]
+  inherits = ["base"]
+}
+
 target "base-cuda12-8-1" {
   context = "."
   dockerfile = "Dockerfile"
