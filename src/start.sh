@@ -7,28 +7,31 @@ export LD_PRELOAD="${TCMALLOC}"
 # Ensure ComfyUI-Manager runs in offline network mode inside the container
 comfy-manager-set-mode offline || echo "worker-comfyui - Could not set ComfyUI-Manager network_mode" >&2
 
-# Symlink Hunyuan Instruct model directories from the network volume into
-# ComfyUI's default models dir so the HunyuanInstructLoader scanner finds them.
-# Also creates a version-stripped alias (e.g. -NF4-v2 → -NF4) to match the
-# hardcoded fallback names in the custom node validation list.
+# Symlink Hunyuan model directories from the network volume so the
+# HunyuanInstructLoader can find them. We link into two locations:
+#   /comfyui/models/<name>  — for the scanner (searches models_dir)
+#   /comfyui/<name>         — fallback: bare name resolves from cwd /comfyui
 if [ -d "/runpod-volume/models" ]; then
     for dir in /runpod-volume/models/HunyuanImage-3.0-*; do
         [ -d "$dir" ] || continue
         name="$(basename "$dir")"
-        target="/comfyui/models/${name}"
-        if [ ! -e "$target" ]; then
-            ln -s "$dir" "$target"
-            echo "worker-comfyui: Linked ${name} into ComfyUI models"
-        fi
-        # Create alias without version suffix (e.g. -NF4-v2 → -NF4)
-        stripped="$(echo "$name" | sed 's/-v[0-9]*$//')"
-        if [ "$stripped" != "$name" ]; then
-            alias_target="/comfyui/models/${stripped}"
-            if [ ! -e "$alias_target" ]; then
-                ln -s "$dir" "$alias_target"
-                echo "worker-comfyui: Linked ${stripped} (alias) into ComfyUI models"
+
+        for prefix in /comfyui/models /comfyui; do
+            target="${prefix}/${name}"
+            if [ ! -e "$target" ]; then
+                ln -s "$dir" "$target"
+                echo "worker-comfyui: Linked ${name} -> ${target}"
             fi
-        fi
+            # Also create alias without version suffix (-v2 → stripped)
+            stripped="$(echo "$name" | sed 's/-v[0-9]*$//')"
+            if [ "$stripped" != "$name" ]; then
+                alias="${prefix}/${stripped}"
+                if [ ! -e "$alias" ]; then
+                    ln -s "$dir" "$alias"
+                    echo "worker-comfyui: Linked ${stripped} (alias) -> ${alias}"
+                fi
+            fi
+        done
     done
 fi
 
