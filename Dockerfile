@@ -84,6 +84,17 @@ RUN chmod +x /usr/local/bin/comfy-node-install
 # Prevent pip from asking for confirmation during uninstall steps in custom nodes
 ENV PIP_NO_INPUT=1
 
+# Install Comfy_HunyuanImage3 custom nodes (git clone + requirements.txt)
+WORKDIR /comfyui
+RUN comfy-node-install https://github.com/EricRollei/Comfy_HunyuanImage3
+
+# Ensure minimum versions for HunyuanImage3 dependencies that the node's
+# requirements.txt may not pin tightly enough
+RUN uv pip install \
+    "transformers>=4.47.0" \
+    "bitsandbytes>=0.48.2" \
+    "accelerate>=1.2.1"
+
 # Copy helper script to switch Manager network mode at container start
 COPY scripts/comfy-manager-set-mode.sh /usr/local/bin/comfy-manager-set-mode
 RUN chmod +x /usr/local/bin/comfy-manager-set-mode
