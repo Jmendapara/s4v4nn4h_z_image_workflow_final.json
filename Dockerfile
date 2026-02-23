@@ -98,15 +98,8 @@ RUN uv pip install \
 # Guarantee that the network-volume path is in the search list even if
 # extra_model_paths.yaml is not picked up or the category was not yet
 # registered when the yaml was processed.
-RUN { \
-    echo ''; \
-    echo '# --- RunPod network-volume search paths (injected by worker build) ---'; \
-    echo 'try:'; \
-    echo '    _folder_paths.add_model_folder_path(HUNYUAN_FOLDER_NAME, "/runpod-volume/models")'; \
-    echo '    _folder_paths.add_model_folder_path(HUNYUAN_INSTRUCT_FOLDER_NAME, "/runpod-volume/models")'; \
-    echo 'except Exception:'; \
-    echo '    pass'; \
-    } >> /comfyui/custom_nodes/Comfy_HunyuanImage3/hunyuan_shared.py
+COPY scripts/patch-hunyuan-paths.py /tmp/patch-hunyuan-paths.py
+RUN python3 /tmp/patch-hunyuan-paths.py && rm /tmp/patch-hunyuan-paths.py
 
 # Copy helper script to switch Manager network mode at container start
 COPY scripts/comfy-manager-set-mode.sh /usr/local/bin/comfy-manager-set-mode
