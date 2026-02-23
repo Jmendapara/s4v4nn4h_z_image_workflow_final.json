@@ -91,6 +91,7 @@ RUN comfy-node-install https://github.com/EricRollei/Comfy_HunyuanImage3
 # Ensure minimum versions for HunyuanImage3 dependencies that the node's
 # requirements.txt may not pin tightly enough
 RUN uv pip install \
+    "diffusers>=0.31.0" \
     "transformers>=4.47.0" \
     "bitsandbytes>=0.48.2" \
     "accelerate>=1.2.1"
