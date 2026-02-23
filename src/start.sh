@@ -7,6 +7,19 @@ export LD_PRELOAD="${TCMALLOC}"
 # Ensure ComfyUI-Manager runs in offline network mode inside the container
 comfy-manager-set-mode offline || echo "worker-comfyui - Could not set ComfyUI-Manager network_mode" >&2
 
+# Symlink Hunyuan Instruct model directories from the network volume into
+# ComfyUI's default models dir so the HunyuanInstructLoader scanner finds them.
+if [ -d "/runpod-volume/models" ]; then
+    for dir in /runpod-volume/models/HunyuanImage-3.0-*; do
+        [ -d "$dir" ] || continue
+        target="/comfyui/models/$(basename "$dir")"
+        if [ ! -e "$target" ]; then
+            ln -s "$dir" "$target"
+            echo "worker-comfyui: Linked $(basename "$dir") into ComfyUI models"
+        fi
+    done
+fi
+
 echo "worker-comfyui: Starting ComfyUI"
 
 # Allow operators to tweak verbosity; default is DEBUG.
