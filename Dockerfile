@@ -114,7 +114,7 @@ FROM base AS downloader
 
 ARG HUGGINGFACE_ACCESS_TOKEN
 # Set default model type if none is provided
-ARG MODEL_TYPE=base
+ARG MODEL_TYPE=hunyuan-instruct-nf4
 
 # Change working directory to ComfyUI
 WORKDIR /comfyui
