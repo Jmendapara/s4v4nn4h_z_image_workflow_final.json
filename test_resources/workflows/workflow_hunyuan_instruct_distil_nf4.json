@@ -1,7 +1,7 @@
 {
   "1": {
     "inputs": {
-      "model_name": "HunyuanImage-3.0-Instruct-Distil-NF4-v2",
+      "model_name": "HunyuanImage-3.0-Instruct-Distil-NF4",
       "force_reload": false,
       "attention_impl": "sdpa",
       "moe_impl": "eager",
