@@ -52,7 +52,10 @@ fi
 
 if ! docker info &>/dev/null 2>&1; then
     echo "[1/5] Starting Docker daemon..."
-    systemctl start docker 2>/dev/null || (dockerd &>/dev/null &  && sleep 5)
+    if ! systemctl start docker 2>/dev/null; then
+        dockerd &>/dev/null &
+        sleep 5
+    fi
 fi
 docker info >/dev/null 2>&1 || { echo "ERROR: Docker daemon is not running."; exit 1; }
 
