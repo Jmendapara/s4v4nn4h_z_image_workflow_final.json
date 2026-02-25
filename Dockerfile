@@ -88,17 +88,11 @@ ENV PIP_NO_INPUT=1
 WORKDIR /comfyui
 RUN comfy-node-install https://github.com/EricRollei/Comfy_HunyuanImage3
 
-# Upgrade PyTorch to 2.8+ (required by Comfy_HunyuanImage3 for correct NF4
-# weight handling in bitsandbytes). comfy-cli installs an older PyTorch;
-# this force-reinstall ensures compatibility regardless of CUDA_VERSION_FOR_COMFY.
-RUN TORCH_INDEX=$(echo "${PYTORCH_INDEX_URL:-https://download.pytorch.org/whl/cu126}" | grep . || echo "https://download.pytorch.org/whl/cu126") && \
-    uv pip install --force-reinstall "torch>=2.8.0" "torchvision" "torchaudio" --index-url "$TORCH_INDEX"
-
-# Ensure minimum versions for HunyuanImage3 dependencies that the node's
-# requirements.txt may not pin tightly enough
+# Pin dependency versions for HunyuanImage3. transformers 5.x breaks NF4
+# model loading (tries to reinitialize quantized Byte weights with .normal_()).
 RUN uv pip install \
     "diffusers>=0.31.0" \
-    "transformers>=4.47.0" \
+    "transformers>=4.47.0,<5.0.0" \
     "bitsandbytes>=0.48.2" \
     "accelerate>=1.2.1"
 

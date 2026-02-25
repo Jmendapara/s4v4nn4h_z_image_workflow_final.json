@@ -15,7 +15,7 @@ set -euo pipefail
 # Prerequisites:
 #   - A RunPod GPU pod with the "RunPod Pytorch" template (or any template
 #     that has Docker pre-installed, or use a Docker-in-Docker template).
-#   - At least 80 GB container disk (for hunyuan-instruct-nf4; 50 GB for base).
+#   - At least 240 GB disk (for hunyuan-instruct-nf4; 80 GB for base).
 #   - Git and internet access (default on RunPod pods).
 # =============================================================================
 

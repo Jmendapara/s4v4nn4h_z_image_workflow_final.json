@@ -15,42 +15,30 @@
   },
   "2": {
     "inputs": {
-      "image": "input_image.png",
-      "upload": "image"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "Load Image"
-    }
-  },
-  "3": {
-    "inputs": {
       "model": ["1", 0],
-      "image": ["2", 0],
-      "instruction": "Change the background to a sunset scene",
+      "prompt": "A golden retriever sitting on a beach at sunset, photorealistic, warm lighting",
       "bot_task": "image",
-      "seed": -1,
+      "seed": 42,
       "system_prompt": "dynamic",
-      "align_output_size": true,
+      "resolution": "1024x1024 (1:1 Square)",
       "steps": -1,
       "guidance_scale": -1,
       "flow_shift": 2.8,
       "max_new_tokens": 2048,
       "verbose": 0
     },
-    "class_type": "HunyuanInstructImageEdit",
+    "class_type": "HunyuanInstructGenerate",
     "_meta": {
-      "title": "Hunyuan Instruct Image Edit"
+      "title": "Hunyuan Instruct Generate"
     }
   },
-  "4": {
+  "3": {
     "inputs": {
-      "filename_prefix": "ComfyUI",
-      "images": ["3", 0]
+      "images": ["2", 0]
     },
-    "class_type": "SaveImage",
+    "class_type": "PreviewImage",
     "_meta": {
-      "title": "Save Image"
+      "title": "Preview Image"
     }
   }
 }

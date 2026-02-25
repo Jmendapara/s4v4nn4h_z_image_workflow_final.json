@@ -84,14 +84,16 @@ export MODEL_TYPE="hunyuan-instruct-nf4"
 ### 1.5 Run the Build Script
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Jmendapara/s4v4nn4h_z_image_workflow_final.json/main/scripts/build-on-pod.sh | bash
+cd /tmp && curl -fsSL https://raw.githubusercontent.com/Jmendapara/s4v4nn4h_z_image_workflow_final.json/main/scripts/build-on-pod.sh | bash
 ```
+
+> **Note:** Always run from `/tmp` (or any directory outside the build workspace). The script deletes and re-creates `/tmp/build-workspace`, which fails if your shell is currently inside that directory.
 
 This script:
 1. Installs Docker if needed
 2. Logs into Docker Hub
 3. Clones this repo
-4. Builds the Docker image with the HunyuanImage 3.0 NF4 model baked in
+4. Builds the Docker image with PyTorch 2.8+, bitsandbytes, and the HunyuanImage 3.0 NF4 model baked in
 5. Pushes the image to Docker Hub
 
 Expect **60–90 minutes** for the full build + push.
@@ -185,7 +187,7 @@ The first request after the endpoint is created (or after it scales to zero) tri
 
 The first-ever cold start takes **10–30 minutes** (image pull). Subsequent cold starts take **2–5 minutes** (model loading only, image is cached).
 
-### 4.2 Image Editing Request
+### 4.2 Text-to-Image Request
 
 Send a workflow to the `/runsync` endpoint:
 
@@ -202,7 +204,60 @@ curl -X POST "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/runsync" \
             "force_reload": false,
             "attention_impl": "sdpa",
             "moe_impl": "eager",
-            "vram_reserve_gb": 5.0,
+            "vram_reserve_gb": 30,
+            "blocks_to_swap": 0
+          },
+          "class_type": "HunyuanInstructLoader",
+          "_meta": { "title": "Hunyuan Instruct Loader" }
+        },
+        "3": {
+          "inputs": {
+            "model": ["1", 0],
+            "prompt": "A golden retriever sitting on a beach at sunset",
+            "bot_task": "image",
+            "seed": 42,
+            "system_prompt": "dynamic",
+            "resolution": "1024x1024 (1:1 Square)",
+            "steps": -1,
+            "guidance_scale": -1,
+            "flow_shift": 2.8,
+            "max_new_tokens": 2048,
+            "verbose": 0
+          },
+          "class_type": "HunyuanInstructGenerate",
+          "_meta": { "title": "Hunyuan Instruct Generate" }
+        },
+        "4": {
+          "inputs": {
+            "filename_prefix": "ComfyUI",
+            "images": ["3", 0]
+          },
+          "class_type": "SaveImage",
+          "_meta": { "title": "Save Image" }
+        }
+      }
+    }
+  }'
+```
+
+### 4.3 Image Editing Request
+
+To edit an existing image, use `HunyuanInstructImageEdit` and pass the input image as base64:
+
+```bash
+curl -X POST "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/runsync" \
+  -H "Authorization: Bearer YOUR_RUNPOD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": {
+      "workflow": {
+        "1": {
+          "inputs": {
+            "model_name": "HunyuanImage-3.0-Instruct-Distil-NF4",
+            "force_reload": false,
+            "attention_impl": "sdpa",
+            "moe_impl": "eager",
+            "vram_reserve_gb": 30,
             "blocks_to_swap": 0
           },
           "class_type": "HunyuanInstructLoader",
@@ -255,21 +310,36 @@ curl -X POST "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/runsync" \
 
 Replace `<base64 encoded image>` with the actual base64-encoded image string (with or without the `data:image/png;base64,` prefix).
 
-### 4.3 Workflow Parameters
+### 4.4 Workflow Parameters
 
 Key parameters you can adjust in the workflow:
 
 | Parameter | Node | Description | Options |
 |---|---|---|---|
+| `prompt` | HunyuanInstructGenerate | Text prompt for generation | Any text |
 | `instruction` | HunyuanInstructImageEdit | The edit instruction | Any text prompt |
-| `bot_task` | HunyuanInstructImageEdit | Generation mode | `image` (fastest), `recaption` (medium), `think_recaption` (best quality) |
+| `bot_task` | Generate / ImageEdit | Generation mode | `image` (fastest), `recaption` (medium), `think_recaption` (best quality) |
+| `resolution` | HunyuanInstructGenerate | Output resolution | Must use exact format: `"1024x1024 (1:1 Square)"` — see full list below |
 | `blocks_to_swap` | HunyuanInstructLoader | Offload transformer blocks to CPU | `0` for A100 80GB, `16`+ for 48GB GPUs |
-| `vram_reserve_gb` | HunyuanInstructLoader | VRAM to keep free for inference | `5.0` default |
-| `seed` | HunyuanInstructImageEdit | Random seed | `-1` for random, or a fixed integer |
-| `steps` | HunyuanInstructImageEdit | Diffusion steps | `-1` for default (8 steps) |
-| `guidance_scale` | HunyuanInstructImageEdit | CFG scale | `-1` for default (2.5) |
+| `vram_reserve_gb` | HunyuanInstructLoader | VRAM to keep free for inference | `30` recommended for NF4 on A100 80GB |
+| `seed` | Generate / ImageEdit | Random seed | `-1` for random, or a fixed integer |
+| `steps` | Generate / ImageEdit | Diffusion steps | `-1` for default (8 steps) |
+| `guidance_scale` | Generate / ImageEdit | CFG scale | `-1` for default (2.5) |
 
-### 4.4 Async Requests
+### 4.5 Resolution Options
+
+The `resolution` field requires an exact string from this list (33 model-native bucket resolutions + Auto). Using a bare value like `"1024x1024"` will fail.
+
+**Portraits:**
+`"512x2048 (1:4 Tall)"`, `"512x1920 (4:15 Tall)"`, `"576x1792 (9:28 Portrait)"`, `"576x1664 (9:26 Portrait)"`, `"640x1536 (5:12 Portrait)"`, `"640x1408 (5:11 Portrait)"`, `"704x1344 (11:21 Portrait)"`, `"704x1216 (11:19 Portrait)"`, `"768x1152 (2:3 Portrait)"`, `"768x1088 (12:17 Portrait)"`, `"832x1024 (13:16 Portrait)"`, `"832x960 (13:15 Portrait)"`, `"896x1152 (7:9 Portrait)"`, `"960x1088 (15:17 Portrait)"`
+
+**Square:**
+`"1024x1024 (1:1 Square)"`
+
+**Landscapes:**
+`"1088x960 (17:15 Landscape)"`, `"1152x896 (9:7 Landscape)"`, `"1024x832 (16:13 Landscape)"`, `"960x832 (15:13 Landscape)"`, `"1152x768 (3:2 Landscape)"`, `"1088x768 (17:12 Landscape)"`, `"1344x704 (21:11 Landscape)"`, `"1216x704 (19:11 Landscape)"`, `"1536x640 (12:5 Landscape)"`, `"1408x640 (11:5 Landscape)"`, `"1792x576 (28:9 Wide)"`, `"1664x576 (26:9 Wide)"`, `"1920x512 (15:4 Wide)"`, `"2048x512 (4:1 Wide)"`
+
+### 4.6 Async Requests
 
 For longer-running jobs, use the `/run` endpoint (returns immediately with a job ID) and poll `/status`:
 
@@ -419,6 +489,14 @@ The first-ever cold start pulls the ~55 GB image. Subsequent cold starts only lo
 
 RunPod is pulling the Docker image. For a ~55 GB image, the first pull takes 10–30 minutes. This only happens once per worker node — the image is cached after that.
 
+### Blank Image / "Prompt executed in 0.00 seconds"
+
+If the endpoint returns a tiny blank PNG and the logs show `Prompt executed in 0.00 seconds`, the model didn't actually run. Common causes:
+
+1. **bitsandbytes assertion error** — check logs for `assert module.weight.shape[1] == 1`. This means PyTorch is too old. The Comfy_HunyuanImage3 node requires `torch>=2.8.0`. The Dockerfile force-upgrades PyTorch — if you see this error, rebuild the image.
+2. **Input image not sent** — if using the image editing workflow, make sure the `images` array contains actual base64 data, not the placeholder string `"<base64 encoded image>"`.
+3. **Resolution format wrong** — the `resolution` field must use the exact format `"1024x1024 (1:1 Square)"`, not bare `"1024x1024"`. See [Resolution Options](#45-resolution-options).
+
 ### Model Not Found
 
 If the worker logs show `no HunyuanImage-3.0-* dirs found`, the model wasn't baked into the image correctly. Verify the image was built with `MODEL_TYPE=hunyuan-instruct-nf4` and check that `/comfyui/models/HunyuanImage-3.0-Instruct-Distil-NF4/` exists inside the container.
@@ -437,6 +515,78 @@ If the worker logs show `no HunyuanImage-3.0-* dirs found`, the model wasn't bak
 | `flux1-dev-fp8` | FLUX.1 dev FP8 quantized | ~15 GB | 24 GB+ |
 | `z-image-turbo` | Z-Image Turbo | ~15 GB | 24 GB+ |
 | `hunyuan-instruct-nf4` | HunyuanImage 3.0 Instruct Distil NF4 | **~55 GB** | **A100 80GB** |
+
+---
+
+## Alternative: Deploy on a GPU Pod (Interactive)
+
+If the serverless deployment isn't working or you need to debug interactively, you can run ComfyUI with the full web UI on a RunPod GPU Pod.
+
+### Create the Pod
+
+1. Go to [RunPod Pods Console](https://www.runpod.io/console/pods)
+2. Click **+ GPU Pod**
+3. Configure:
+
+| Setting | Value |
+|---|---|
+| GPU | A100 80GB (or RTX PRO 6000 / any 48GB+ GPU) |
+| Template | ComfyUI (RunPod's official template) |
+| Container Disk | 100 GB |
+| Volume Disk | 60 GB (persists across restarts) |
+| Expose HTTP Ports | `8188` |
+
+4. Click **Deploy** (~$1.64/hr for A100 80GB)
+
+### Run the Setup Script
+
+Open the pod's web terminal or SSH in and paste this entire block:
+
+```bash
+# Install Comfy_HunyuanImage3 custom nodes
+cd /workspace/runpod-slim/ComfyUI/custom_nodes
+git clone https://github.com/EricRollei/Comfy_HunyuanImage3
+cd Comfy_HunyuanImage3
+/workspace/runpod-slim/ComfyUI/.venv/bin/pip install -r requirements.txt
+/workspace/runpod-slim/ComfyUI/.venv/bin/pip install "diffusers>=0.31.0" "transformers>=4.47.0,<5.0.0" "bitsandbytes>=0.48.2" "accelerate>=1.2.1" "huggingface_hub[hf_xet]"
+
+# Download the model (~48 GB, takes 10-30 min)
+python3 -c "
+from huggingface_hub import snapshot_download
+snapshot_download(
+    'EricRollei/HunyuanImage-3.0-Instruct-Distil-NF4-v2',
+    local_dir='/workspace/runpod-slim/ComfyUI/models/HunyuanImage-3.0-Instruct-Distil-NF4'
+)
+"
+ln -s /workspace/runpod-slim/ComfyUI/models/HunyuanImage-3.0-Instruct-Distil-NF4 /workspace/runpod-slim/ComfyUI/models/HunyuanImage-3.0-Instruct-Distil-NF4-v2
+
+# Kill existing ComfyUI and restart with the venv
+pkill -f "main.py" 2>/dev/null; sleep 2
+cd /workspace/runpod-slim/ComfyUI
+.venv/bin/python main.py --listen 0.0.0.0 --port 8188
+```
+
+> **Important:** Packages must be installed into the `.venv` (using `.venv/bin/pip`), and ComfyUI must be started with `.venv/bin/python`. The system Python has mismatched torchvision that will crash ComfyUI. Also, `transformers` must be pinned to `<5.0.0` -- version 5.x breaks NF4 model loading.
+
+Total setup time: ~20-40 minutes (mostly model download). The model download only happens once if you use a persistent volume.
+
+### Access the Web UI
+
+Click **Connect** on your pod in the RunPod dashboard, then click the **HTTP 8188** link.
+
+### Test with curl
+
+From a second terminal tab on the pod, send a text-to-image request:
+
+```bash
+curl -X POST http://localhost:8188/prompt -H "Content-Type: application/json" -d '{"prompt":{"1":{"inputs":{"model_name":"HunyuanImage-3.0-Instruct-Distil-NF4","force_reload":false,"attention_impl":"sdpa","moe_impl":"eager","vram_reserve_gb":30,"blocks_to_swap":0},"class_type":"HunyuanInstructLoader"},"2":{"inputs":{"model":["1",0],"prompt":"A golden retriever sitting on a beach at sunset","bot_task":"image","seed":42,"system_prompt":"dynamic","resolution":"1024x1024 (1:1 Square)","steps":-1,"guidance_scale":-1,"flow_shift":2.8,"max_new_tokens":2048,"verbose":0},"class_type":"HunyuanInstructGenerate"},"3":{"inputs":{"images":["2",0]},"class_type":"PreviewImage"}}}'
+```
+
+Watch the first terminal for model loading and diffusion progress. The generated image will appear in the web UI's preview node.
+
+### Stop the Pod When Done
+
+Pods charge continuously while running. **Stop or delete the pod** when you're done. The model stays on the persistent volume -- next time you start the pod, re-run the setup script and it skips the download.
 
 ---
 
