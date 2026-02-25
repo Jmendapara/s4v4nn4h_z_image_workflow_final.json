@@ -160,8 +160,7 @@ RUN if [ "$MODEL_TYPE" = "z-image-turbo" ]; then \
 
 RUN if [ "$MODEL_TYPE" = "hunyuan-instruct-nf4" ]; then \
       uv pip install "huggingface_hub[hf_xet]" && \
-      python3 -c "from huggingface_hub import snapshot_download; snapshot_download('EricRollei/HunyuanImage-3.0-Instruct-Distil-NF4-v2', local_dir='/comfyui/models/HunyuanImage-3.0-Instruct-Distil-NF4')" && \
-      ln -s HunyuanImage-3.0-Instruct-Distil-NF4 models/HunyuanImage-3.0-Instruct-Distil-NF4-v2; \
+      python3 -c "from huggingface_hub import snapshot_download; snapshot_download('EricRollei/HunyuanImage-3.0-Instruct-Distil-NF4-v2', local_dir='/comfyui/models/HunyuanImage-3.0-Instruct-Distil-NF4')"; \
     fi
 
 # Stage 3: Final image
@@ -169,3 +168,8 @@ FROM base AS final
 
 # Copy models from stage 2 to the final image
 COPY --from=downloader /comfyui/models /comfyui/models
+
+# Re-create the symlink alias in the final image (avoids COPY resolving it and duplicating data)
+RUN if [ -d /comfyui/models/HunyuanImage-3.0-Instruct-Distil-NF4 ]; then \
+      ln -s HunyuanImage-3.0-Instruct-Distil-NF4 /comfyui/models/HunyuanImage-3.0-Instruct-Distil-NF4-v2; \
+    fi
