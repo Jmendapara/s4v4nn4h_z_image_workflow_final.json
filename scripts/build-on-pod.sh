@@ -41,25 +41,20 @@ echo "  Image tag:     ${IMAGE_TAG}"
 echo "  HF token:      ${HUGGINGFACE_ACCESS_TOKEN:+(set)}"
 echo "============================================="
 
-# ---- Step 1: Install Docker if not present ----
-if ! command -v docker &>/dev/null; then
-    echo "[1/5] Docker not found — installing..."
-    apt-get update -qq
-    apt-get install -y -qq ca-certificates curl gnupg lsb-release
-    install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    chmod a+r /etc/apt/keyrings/docker.gpg
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-      https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-      > /etc/apt/sources.list.d/docker.list
-    apt-get update -qq
-    apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin
-    systemctl start docker || dockerd &>/dev/null &
-    sleep 3
+# ---- Step 1: Ensure Docker (with BuildKit/buildx) is installed and running ----
+if ! command -v docker &>/dev/null || ! docker buildx version &>/dev/null 2>&1; then
+    echo "[1/5] Installing Docker via get.docker.com..."
+    curl -fsSL https://get.docker.com | sh
     echo "[1/5] Docker installed."
 else
     echo "[1/5] Docker already available: $(docker --version)"
 fi
+
+if ! docker info &>/dev/null 2>&1; then
+    echo "[1/5] Starting Docker daemon..."
+    systemctl start docker 2>/dev/null || (dockerd &>/dev/null &  && sleep 5)
+fi
+docker info >/dev/null 2>&1 || { echo "ERROR: Docker daemon is not running."; exit 1; }
 
 # ---- Step 2: Log into Docker Hub ----
 echo "[2/5] Logging into Docker Hub..."

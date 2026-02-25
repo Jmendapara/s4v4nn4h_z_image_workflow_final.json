@@ -15,6 +15,7 @@ This project allows you to run ComfyUI workflows as a serverless API endpoint on
 ## Table of Contents
 
 - [Quickstart](#quickstart)
+- [Building the Docker Image](#building-the-docker-image)
 - [Available Docker Images](#available-docker-images)
 - [API Specification](#api-specification)
 - [Usage](#usage)
@@ -30,6 +31,139 @@ This project allows you to run ComfyUI workflows as a serverless API endpoint on
 3.  ⚙️ Optionally configure the worker (e.g., for S3 upload) using environment variables - see the full [Configuration Guide](docs/configuration.md).
 4.  🧪 Pick an example workflow from [`test_resources/workflows/`](./test_resources/workflows/) or [get your own](#getting-the-workflow-json).
 5.  🚀 Follow the [Usage](#usage) steps below to interact with your deployed endpoint.
+
+## Building the Docker Image
+
+These images are large (10–30 GB depending on model) and typically can't be built on a local machine. Below are two methods for building remotely.
+
+### Prerequisites
+
+- A [Docker Hub](https://hub.docker.com/) account with an [access token](https://hub.docker.com/settings/security)
+- The repo pushed to GitHub (for the cloud build script)
+
+### Method 1: Build on a Cloud Server (Recommended)
+
+Use a cheap cloud VPS (e.g., [Hetzner Cloud](https://console.hetzner.cloud/)) to build and push the image. No GPU is required — you only need CPU, disk space, and internet.
+
+**1. Create a server**
+
+| Setting          | Value                            |
+| ---------------- | -------------------------------- |
+| Provider         | Hetzner Cloud (or any VPS)       |
+| OS               | Ubuntu 24.04                     |
+| Server type      | CPX41 (4 vCPU, 16 GB RAM)       |
+| Disk             | 160 GB (included with CPX41)     |
+| Estimated cost   | ~$0.03/hour                      |
+
+**2. SSH into the server**
+
+```bash
+ssh root@YOUR_SERVER_IP
+```
+
+**3. Install Docker**
+
+```bash
+curl -fsSL https://get.docker.com | sh
+systemctl start docker
+```
+
+**4. Set environment variables**
+
+```bash
+export DOCKERHUB_USERNAME="your-dockerhub-username"
+export DOCKERHUB_TOKEN="dckr_pat_your_access_token"
+export IMAGE_TAG="your-dockerhub-username/worker-comfyui:latest-hunyuan-instruct-nf4"
+export MODEL_TYPE="hunyuan-instruct-nf4"
+```
+
+Available `MODEL_TYPE` values:
+
+| MODEL_TYPE               | Description                              | Approx. Image Size |
+| ------------------------ | ---------------------------------------- | ------------------- |
+| `base`                   | ComfyUI only, no models                  | ~8 GB               |
+| `sdxl`                   | Stable Diffusion XL                      | ~15 GB              |
+| `sd3`                    | Stable Diffusion 3 (needs HF token)      | ~12 GB              |
+| `flux1-schnell`          | FLUX.1 schnell (needs HF token)          | ~20 GB              |
+| `flux1-dev`              | FLUX.1 dev (needs HF token)              | ~20 GB              |
+| `flux1-dev-fp8`          | FLUX.1 dev FP8 quantized                 | ~15 GB              |
+| `z-image-turbo`          | Z-Image Turbo                            | ~15 GB              |
+| `hunyuan-instruct-nf4`   | HunyuanImage 3.0 Instruct Distil NF4    | ~25 GB              |
+
+For models that require a HuggingFace token (`sd3`, `flux1-schnell`, `flux1-dev`), also set:
+
+```bash
+export HUGGINGFACE_ACCESS_TOKEN="hf_your_token"
+```
+
+**5. Run the build script**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Jmendapara/s4v4nn4h_z_image_workflow_final.json/main/scripts/build-on-pod.sh | bash
+```
+
+This clones the repo, builds the Docker image with the model baked in, and pushes it to Docker Hub. Expect 30–60 minutes depending on model size and server bandwidth.
+
+**6. Delete the server** when the build finishes to stop charges.
+
+### Method 2: Build via GitHub Actions
+
+Use the **"Build & Push Single Target"** workflow (`.github/workflows/build-and-push.yml`).
+
+**1. Configure GitHub Secrets and Variables**
+
+Go to your GitHub repo → **Settings** → **Secrets and variables** → **Actions**.
+
+Secrets:
+
+| Secret                     | Value                                  |
+| -------------------------- | -------------------------------------- |
+| `DOCKERHUB_USERNAME`       | Your Docker Hub username               |
+| `DOCKERHUB_TOKEN`          | Your Docker Hub access token           |
+| `HUGGINGFACE_ACCESS_TOKEN` | HuggingFace token (for gated models)   |
+
+Variables:
+
+| Variable         | Value                                          |
+| ---------------- | ---------------------------------------------- |
+| `DOCKERHUB_REPO` | Your Docker Hub username or org                 |
+| `DOCKERHUB_IMG`  | Image name (e.g., `worker-comfyui`)             |
+
+**2. Run the workflow**
+
+1. Go to **Actions** → **"Build & Push Single Target"** → **Run workflow**
+2. Select your target (e.g., `hunyuan-instruct-nf4`) and set a version tag
+3. Click **Run workflow**
+
+> **Note:** Large targets like `hunyuan-instruct-nf4` may exceed GitHub Actions runner disk space (~30 GB free after cleanup). For large images, use Method 1 instead. Smaller targets like `base`, `sdxl`, and `z-image-turbo` work fine with GitHub Actions.
+
+### Deploying to RunPod
+
+Once the image is pushed to Docker Hub:
+
+1. Go to [RunPod Serverless Console](https://www.runpod.io/console/serverless)
+2. Click **+ New Endpoint**
+3. Configure:
+
+| Setting          | Value                                                                  |
+| ---------------- | ---------------------------------------------------------------------- |
+| Container Image  | `your-dockerhub-username/worker-comfyui:latest-hunyuan-instruct-nf4`   |
+| GPU              | A100 80GB (for hunyuan), or A40/L40/RTX 4090 for smaller models        |
+| Min Workers      | 0 (scales to zero when idle)                                            |
+| Max Workers      | 1 (or more for higher throughput)                                       |
+| Container Disk   | 20 GB                                                                   |
+| Idle Timeout     | 5 seconds                                                               |
+
+4. Click **Create** and note your **Endpoint ID**
+
+Test with:
+
+```bash
+curl -X POST "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/runsync" \
+  -H "Authorization: Bearer YOUR_RUNPOD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"input": {"workflow": { ... your ComfyUI API workflow JSON ... }}}'
+```
 
 ## Available Docker Images
 
