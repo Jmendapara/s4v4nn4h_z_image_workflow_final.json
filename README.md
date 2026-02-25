@@ -1,74 +1,78 @@
-# worker-comfyui
+# HunyuanImage 3.0 — Serverless ComfyUI Worker
 
-> [ComfyUI](https://github.com/comfyanonymous/ComfyUI) as a serverless API on [RunPod](https://www.runpod.io/)
-
-<p align="center">
-  <img src="assets/worker_sitting_in_comfy_chair.jpg" title="Worker sitting in comfy chair" />
-</p>
-
-[![RunPod](https://api.runpod.io/badge/runpod-workers/worker-comfyui)](https://www.runpod.io/console/hub/runpod-workers/worker-comfyui)
+> [ComfyUI](https://github.com/comfyanonymous/ComfyUI) + [HunyuanImage 3.0 Instruct Distil NF4](https://huggingface.co/EricRollei/HunyuanImage-3.0-Instruct-Distil-NF4-v2) as a serverless API on [RunPod](https://www.runpod.io/)
 
 ---
-
-This project allows you to run ComfyUI workflows as a serverless API endpoint on the RunPod platform. Submit workflows via API calls and receive generated images as base64 strings or S3 URLs.
 
 ## Table of Contents
 
-- [Quickstart](#quickstart)
-- [Building the Docker Image](#building-the-docker-image)
-- [Available Docker Images](#available-docker-images)
+- [Overview](#overview)
+- [Model Details](#model-details)
+- [Step 1: Build the Docker Image](#step-1-build-the-docker-image)
+- [Step 2: Push to a Container Registry](#step-2-push-to-a-container-registry)
+- [Step 3: Deploy on RunPod](#step-3-deploy-on-runpod)
+- [Step 4: Test Your Endpoint](#step-4-test-your-endpoint)
 - [API Specification](#api-specification)
-- [Usage](#usage)
-- [Getting the Workflow JSON](#getting-the-workflow-json)
-- [Further Documentation](#further-documentation)
+- [Environment Variables](#environment-variables)
+- [Cost Estimates](#cost-estimates)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
-## Quickstart
+## Overview
 
-1.  🐳 Choose one of the [available Docker images](#available-docker-images) for your serverless endpoint (e.g., `runpod/worker-comfyui:<version>-sd3`).
-2.  📄 Follow the [Deployment Guide](docs/deployment.md) to set up your RunPod template and endpoint.
-3.  ⚙️ Optionally configure the worker (e.g., for S3 upload) using environment variables - see the full [Configuration Guide](docs/configuration.md).
-4.  🧪 Pick an example workflow from [`test_resources/workflows/`](./test_resources/workflows/) or [get your own](#getting-the-workflow-json).
-5.  🚀 Follow the [Usage](#usage) steps below to interact with your deployed endpoint.
+This project packages ComfyUI with the HunyuanImage 3.0 Instruct Distil NF4 model baked into a Docker image. The image runs as a serverless worker on RunPod — you send a workflow via API and receive generated/edited images back as base64 strings or S3 URLs.
 
-## Building the Docker Image
+The model is baked directly into the Docker image (~55 GB total). No network volume is required.
 
-These images are large (10–30 GB depending on model) and typically can't be built on a local machine. Below are two methods for building remotely.
+## Model Details
 
-### Prerequisites
+| Property | Value |
+|---|---|
+| Model | [HunyuanImage 3.0 Instruct Distil NF4 v2](https://huggingface.co/EricRollei/HunyuanImage-3.0-Instruct-Distil-NF4-v2) |
+| Architecture | Mixture-of-Experts Diffusion Transformer |
+| Parameters | 80B total, 13B active per token |
+| Quantization | NF4 (4-bit) via bitsandbytes |
+| Diffusion Steps | 8 (CFG-distilled) |
+| Capabilities | Text-to-image, image editing, multi-image fusion |
+| On-disk Size | ~48 GB |
+| VRAM Required | ~41–49 GB (A100 80GB recommended) |
+| ComfyUI Nodes | [Comfy_HunyuanImage3](https://github.com/EricRollei/Comfy_HunyuanImage3) |
 
-- A [Docker Hub](https://hub.docker.com/) account with an [access token](https://hub.docker.com/settings/security)
-- The repo pushed to GitHub (for the cloud build script)
+---
 
-### Method 1: Build on a Cloud Server (Recommended)
+## Step 1: Build the Docker Image
 
-Use a cheap cloud VPS (e.g., [Hetzner Cloud](https://console.hetzner.cloud/)) to build and push the image. No GPU is required — you only need CPU, disk space, and internet.
+The image is ~55 GB and must be built on a remote server with enough disk space. A GPU is **not** needed for building.
 
-**1. Create a server**
+### 1.1 Create a Cloud Server
 
-| Setting          | Value                            |
-| ---------------- | -------------------------------- |
-| Provider         | Hetzner Cloud (or any VPS)       |
-| OS               | Ubuntu 24.04                     |
-| Server type      | CPX41 (4 vCPU, 16 GB RAM)       |
-| Disk             | 160 GB (included with CPX41)     |
-| Estimated cost   | ~$0.03/hour                      |
+Use a cheap VPS from [Hetzner Cloud](https://console.hetzner.cloud/) or any provider.
 
-**2. SSH into the server**
+| Setting | Value |
+|---|---|
+| Provider | Hetzner Cloud (or any VPS) |
+| OS | Ubuntu 24.04 |
+| Server type | CPX51 or larger (8 vCPU, 16 GB RAM, 240 GB disk) |
+| Disk | 240 GB minimum for `hunyuan-instruct-nf4` |
+| Estimated cost | ~$0.04/hour |
+
+> **Important:** The CPX41 (160 GB disk) may not be enough for building this image. Docker needs space for intermediate build layers in addition to the final image. Use 240 GB+ to be safe.
+
+### 1.2 SSH into the Server
 
 ```bash
 ssh root@YOUR_SERVER_IP
 ```
 
-**3. Install Docker**
+### 1.3 Install Docker
 
 ```bash
 curl -fsSL https://get.docker.com | sh
 systemctl start docker
 ```
 
-**4. Set environment variables**
+### 1.4 Set Environment Variables
 
 ```bash
 export DOCKERHUB_USERNAME="your-dockerhub-username"
@@ -77,169 +81,227 @@ export IMAGE_TAG="your-dockerhub-username/worker-comfyui:latest-hunyuan-instruct
 export MODEL_TYPE="hunyuan-instruct-nf4"
 ```
 
-Available `MODEL_TYPE` values:
-
-| MODEL_TYPE               | Description                              | Approx. Image Size |
-| ------------------------ | ---------------------------------------- | ------------------- |
-| `base`                   | ComfyUI only, no models                  | ~8 GB               |
-| `sdxl`                   | Stable Diffusion XL                      | ~15 GB              |
-| `sd3`                    | Stable Diffusion 3 (needs HF token)      | ~12 GB              |
-| `flux1-schnell`          | FLUX.1 schnell (needs HF token)          | ~20 GB              |
-| `flux1-dev`              | FLUX.1 dev (needs HF token)              | ~20 GB              |
-| `flux1-dev-fp8`          | FLUX.1 dev FP8 quantized                 | ~15 GB              |
-| `z-image-turbo`          | Z-Image Turbo                            | ~15 GB              |
-| `hunyuan-instruct-nf4`   | HunyuanImage 3.0 Instruct Distil NF4    | ~25 GB              |
-
-For models that require a HuggingFace token (`sd3`, `flux1-schnell`, `flux1-dev`), also set:
-
-```bash
-export HUGGINGFACE_ACCESS_TOKEN="hf_your_token"
-```
-
-**5. Run the build script**
+### 1.5 Run the Build Script
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Jmendapara/s4v4nn4h_z_image_workflow_final.json/main/scripts/build-on-pod.sh | bash
 ```
 
-This clones the repo, builds the Docker image with the model baked in, and pushes it to Docker Hub. Expect 30–60 minutes depending on model size and server bandwidth.
+This script:
+1. Installs Docker if needed
+2. Logs into Docker Hub
+3. Clones this repo
+4. Builds the Docker image with the HunyuanImage 3.0 NF4 model baked in
+5. Pushes the image to Docker Hub
 
-**6. Delete the server** when the build finishes to stop charges.
+Expect **60–90 minutes** for the full build + push.
 
-### Method 2: Build via GitHub Actions
+### 1.6 Delete the Server
 
-Use the **"Build & Push Single Target"** workflow (`.github/workflows/build-and-push.yml`).
+Once the push completes, **delete the server immediately** to stop charges.
 
-**1. Configure GitHub Secrets and Variables**
+---
 
-Go to your GitHub repo → **Settings** → **Secrets and variables** → **Actions**.
+## Step 2: Push to a Container Registry
 
-Secrets:
+The build script pushes to Docker Hub automatically. If the push fails (502 errors are common for 50+ GB layers), retry:
 
-| Secret                     | Value                                  |
-| -------------------------- | -------------------------------------- |
-| `DOCKERHUB_USERNAME`       | Your Docker Hub username               |
-| `DOCKERHUB_TOKEN`          | Your Docker Hub access token           |
-| `HUGGINGFACE_ACCESS_TOKEN` | HuggingFace token (for gated models)   |
+```bash
+docker push your-dockerhub-username/worker-comfyui:latest-hunyuan-instruct-nf4
+```
 
-Variables:
+Docker skips layers that already uploaded successfully and only retries the failed ones.
 
-| Variable         | Value                                          |
-| ---------------- | ---------------------------------------------- |
-| `DOCKERHUB_REPO` | Your Docker Hub username or org                 |
-| `DOCKERHUB_IMG`  | Image name (e.g., `worker-comfyui`)             |
+### Alternative: Push to GitHub Container Registry
 
-**2. Run the workflow**
+GHCR handles large layers more reliably than Docker Hub. To use it instead:
 
-1. Go to **Actions** → **"Build & Push Single Target"** → **Run workflow**
-2. Select your target (e.g., `hunyuan-instruct-nf4`) and set a version tag
-3. Click **Run workflow**
+```bash
+echo YOUR_GITHUB_PAT | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+docker tag your-dockerhub-username/worker-comfyui:latest-hunyuan-instruct-nf4 \
+  ghcr.io/YOUR_GITHUB_USERNAME/worker-comfyui:latest-hunyuan-instruct-nf4
+docker push ghcr.io/YOUR_GITHUB_USERNAME/worker-comfyui:latest-hunyuan-instruct-nf4
+```
 
-> **Note:** Large targets like `hunyuan-instruct-nf4` may exceed GitHub Actions runner disk space (~30 GB free after cleanup). For large images, use Method 1 instead. Smaller targets like `base`, `sdxl`, and `z-image-turbo` work fine with GitHub Actions.
+RunPod accepts images from any public container registry — Docker Hub, GHCR, Amazon ECR, etc.
 
-### Deploying to RunPod
+---
 
-Once the image is pushed to Docker Hub:
+## Step 3: Deploy on RunPod
+
+### 3.1 Create a RunPod Account
+
+Sign up at [runpod.io](https://www.runpod.io/) and add credits.
+
+### 3.2 Get a RunPod API Key
+
+Go to [Settings > API Keys](https://www.runpod.io/console/serverless/user/settings) and generate a key. Save it — you'll need it to call the endpoint.
+
+### 3.3 Create a Serverless Endpoint
 
 1. Go to [RunPod Serverless Console](https://www.runpod.io/console/serverless)
 2. Click **+ New Endpoint**
-3. Configure:
+3. Configure with these settings:
 
-| Setting          | Value                                                                  |
-| ---------------- | ---------------------------------------------------------------------- |
-| Container Image  | `your-dockerhub-username/worker-comfyui:latest-hunyuan-instruct-nf4`   |
-| GPU              | A100 80GB (for hunyuan), or A40/L40/RTX 4090 for smaller models        |
-| Min Workers      | 0 (scales to zero when idle)                                            |
-| Max Workers      | 1 (or more for higher throughput)                                       |
-| Container Disk   | 20 GB                                                                   |
-| Idle Timeout     | 5 seconds                                                               |
+| Setting | Value | Notes |
+|---|---|---|
+| **Container Image** | `your-dockerhub-username/worker-comfyui:latest-hunyuan-instruct-nf4` | Or `ghcr.io/...` if using GHCR |
+| **GPU** | **A100 80GB** | Required — 48 GB GPUs will OOM |
+| **Min Workers** | `0` | Scales to zero when idle (no cost) |
+| **Max Workers** | `1` | Increase for higher throughput |
+| **Container Disk** | `20 GB` | Scratch space only; model is in the image |
+| **Idle Timeout** | `5` seconds | How long a warm worker waits before shutting down |
+| **FlashBoot** | Enabled (if available) | Speeds up cold starts |
 
-4. Click **Create** and note your **Endpoint ID**
+4. **Do NOT set** a start command — the image uses its built-in `/start.sh`
+5. **Do NOT attach** a network volume — the model is baked into the image
+6. Click **Create**
+7. Note your **Endpoint ID** from the endpoint overview page
 
-Test with:
+### 3.4 Environment Variables (Optional)
+
+No environment variables are required for basic operation. The endpoint works out of the box.
+
+If you need optional features, add these in the RunPod endpoint template under **Environment Variables**:
+
+| Variable | Required | Description |
+|---|---|---|
+| `BUCKET_ENDPOINT_URL` | No | S3 bucket URL to upload images instead of returning base64 |
+| `BUCKET_ACCESS_KEY_ID` | No | AWS access key for S3 upload |
+| `BUCKET_SECRET_ACCESS_KEY` | No | AWS secret key for S3 upload |
+| `COMFY_ORG_API_KEY` | No | Comfy.org API key for API Nodes |
+| `COMFY_LOG_LEVEL` | No | Logging verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR` (default: `DEBUG`) |
+| `REFRESH_WORKER` | No | Set `true` to restart the worker after each job for a clean state |
+
+---
+
+## Step 4: Test Your Endpoint
+
+### 4.1 First Request (Cold Start)
+
+The first request after the endpoint is created (or after it scales to zero) triggers a **cold start**:
+- RunPod pulls the ~55 GB image (first time only — cached after that)
+- ComfyUI starts and loads the model into GPU VRAM
+
+The first-ever cold start takes **10–30 minutes** (image pull). Subsequent cold starts take **2–5 minutes** (model loading only, image is cached).
+
+### 4.2 Image Editing Request
+
+Send a workflow to the `/runsync` endpoint:
 
 ```bash
 curl -X POST "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/runsync" \
   -H "Authorization: Bearer YOUR_RUNPOD_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"input": {"workflow": { ... your ComfyUI API workflow JSON ... }}}'
+  -d '{
+    "input": {
+      "workflow": {
+        "1": {
+          "inputs": {
+            "model_name": "HunyuanImage-3.0-Instruct-Distil-NF4",
+            "force_reload": false,
+            "attention_impl": "sdpa",
+            "moe_impl": "eager",
+            "vram_reserve_gb": 5.0,
+            "blocks_to_swap": 0
+          },
+          "class_type": "HunyuanInstructLoader",
+          "_meta": { "title": "Hunyuan Instruct Loader" }
+        },
+        "2": {
+          "inputs": {
+            "image": "input_image.png",
+            "upload": "image"
+          },
+          "class_type": "LoadImage",
+          "_meta": { "title": "Load Image" }
+        },
+        "3": {
+          "inputs": {
+            "model": ["1", 0],
+            "image": ["2", 0],
+            "instruction": "Change the background to a sunset scene",
+            "bot_task": "image",
+            "seed": -1,
+            "system_prompt": "dynamic",
+            "align_output_size": true,
+            "steps": -1,
+            "guidance_scale": -1,
+            "flow_shift": 2.8,
+            "max_new_tokens": 2048,
+            "verbose": 0
+          },
+          "class_type": "HunyuanInstructImageEdit",
+          "_meta": { "title": "Hunyuan Instruct Image Edit" }
+        },
+        "4": {
+          "inputs": {
+            "filename_prefix": "ComfyUI",
+            "images": ["3", 0]
+          },
+          "class_type": "SaveImage",
+          "_meta": { "title": "Save Image" }
+        }
+      },
+      "images": [
+        {
+          "name": "input_image.png",
+          "image": "<base64 encoded image>"
+        }
+      ]
+    }
+  }'
 ```
 
-## Available Docker Images
+Replace `<base64 encoded image>` with the actual base64-encoded image string (with or without the `data:image/png;base64,` prefix).
 
-These images are available on Docker Hub under `runpod/worker-comfyui`:
+### 4.3 Workflow Parameters
 
-- **`runpod/worker-comfyui:<version>-base`**: Clean ComfyUI install with no models.
-- **`runpod/worker-comfyui:<version>-flux1-schnell`**: Includes checkpoint, text encoders, and VAE for [FLUX.1 schnell](https://huggingface.co/black-forest-labs/FLUX.1-schnell).
-- **`runpod/worker-comfyui:<version>-flux1-dev`**: Includes checkpoint, text encoders, and VAE for [FLUX.1 dev](https://huggingface.co/black-forest-labs/FLUX.1-dev).
-- **`runpod/worker-comfyui:<version>-sdxl`**: Includes checkpoint and VAEs for [Stable Diffusion XL](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0).
-- **`runpod/worker-comfyui:<version>-sd3`**: Includes checkpoint for [Stable Diffusion 3 medium](https://huggingface.co/stabilityai/stable-diffusion-3-medium).
+Key parameters you can adjust in the workflow:
 
-Replace `<version>` with the current release tag, check the [releases page](https://github.com/runpod-workers/worker-comfyui/releases) for the latest version.
+| Parameter | Node | Description | Options |
+|---|---|---|---|
+| `instruction` | HunyuanInstructImageEdit | The edit instruction | Any text prompt |
+| `bot_task` | HunyuanInstructImageEdit | Generation mode | `image` (fastest), `recaption` (medium), `think_recaption` (best quality) |
+| `blocks_to_swap` | HunyuanInstructLoader | Offload transformer blocks to CPU | `0` for A100 80GB, `16`+ for 48GB GPUs |
+| `vram_reserve_gb` | HunyuanInstructLoader | VRAM to keep free for inference | `5.0` default |
+| `seed` | HunyuanInstructImageEdit | Random seed | `-1` for random, or a fixed integer |
+| `steps` | HunyuanInstructImageEdit | Diffusion steps | `-1` for default (8 steps) |
+| `guidance_scale` | HunyuanInstructImageEdit | CFG scale | `-1` for default (2.5) |
+
+### 4.4 Async Requests
+
+For longer-running jobs, use the `/run` endpoint (returns immediately with a job ID) and poll `/status`:
+
+```bash
+# Submit job
+curl -X POST "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/run" \
+  -H "Authorization: Bearer YOUR_RUNPOD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"input": {"workflow": { ... }}}'
+
+# Check status (replace JOB_ID with the id from the response)
+curl "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/status/JOB_ID" \
+  -H "Authorization: Bearer YOUR_RUNPOD_API_KEY"
+```
+
+---
 
 ## API Specification
 
-The worker exposes standard RunPod serverless endpoints (`/run`, `/runsync`, `/health`). By default, images are returned as base64 strings. You can configure the worker to upload images to an S3 bucket instead by setting specific environment variables (see [Configuration Guide](docs/configuration.md)).
-
-Use the `/runsync` endpoint for synchronous requests that wait for the job to complete and return the result directly. Use the `/run` endpoint for asynchronous requests that return immediately with a job ID; you'll need to poll the `/status` endpoint separately to get the result.
-
 ### Input
 
-```json
-{
-  "input": {
-    "workflow": {
-      "6": {
-        "inputs": {
-          "text": "a ball on the table",
-          "clip": ["30", 1]
-        },
-        "class_type": "CLIPTextEncode",
-        "_meta": {
-          "title": "CLIP Text Encode (Positive Prompt)"
-        }
-      }
-    },
-    "images": [
-      {
-        "name": "input_image_1.png",
-        "image": "data:image/png;base64,iVBOR..."
-      }
-    ]
-  }
-}
-```
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `input.workflow` | Object | Yes | ComfyUI workflow in API format |
+| `input.images` | Array | No | Input images as `{name, image}` objects |
+| `input.images[].name` | String | Yes | Filename referenced in the workflow |
+| `input.images[].image` | String | Yes | Base64 encoded image string |
+| `input.comfy_org_api_key` | String | No | Per-request Comfy.org API key |
 
-The following tables describe the fields within the `input` object:
-
-| Field Path                | Type   | Required | Description                                                                                                                                |
-| ------------------------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `input`                   | Object | Yes      | Top-level object containing request data.                                                                                                  |
-| `input.workflow`          | Object | Yes      | The ComfyUI workflow exported in the [required format](#getting-the-workflow-json).                                                        |
-| `input.images`            | Array  | No       | Optional array of input images. Each image is uploaded to ComfyUI's `input` directory and can be referenced by its `name` in the workflow. |
-| `input.comfy_org_api_key` | String | No       | Optional per-request Comfy.org API key for API Nodes. Overrides the `COMFY_ORG_API_KEY` environment variable if both are set.              |
-
-#### `input.images` Object
-
-Each object within the `input.images` array must contain:
-
-| Field Name | Type   | Required | Description                                                                                                                       |
-| ---------- | ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `name`     | String | Yes      | Filename used to reference the image in the workflow (e.g., via a "Load Image" node). Must be unique within the array.            |
-| `image`    | String | Yes      | Base64 encoded string of the image. A data URI prefix (e.g., `data:image/png;base64,`) is optional and will be handled correctly. |
-
-> [!NOTE]
->
-> **Size Limits:** RunPod endpoints have request size limits (e.g., 10MB for `/run`, 20MB for `/runsync`). Large base64 input images can exceed these limits. See [RunPod Docs](https://docs.runpod.io/docs/serverless-endpoint-urls).
+> **Size Limits:** RunPod endpoints have request size limits — 10 MB for `/run`, 20 MB for `/runsync`. Large base64 input images may exceed these.
 
 ### Output
-
-> [!WARNING]
->
-> **Breaking Change in Output Format (5.0.0+)**
->
-> Versions `< 5.0.0` returned the primary image data (S3 URL or base64 string) directly within an `output.message` field.
-> Starting with `5.0.0`, the output format has changed significantly, see below
 
 ```json
 {
@@ -259,65 +321,140 @@ Each object within the `input.images` array must contain:
 }
 ```
 
-| Field Path      | Type             | Required | Description                                                                                                 |
-| --------------- | ---------------- | -------- | ----------------------------------------------------------------------------------------------------------- |
-| `output`        | Object           | Yes      | Top-level object containing the results of the job execution.                                               |
-| `output.images` | Array of Objects | No       | Present if the workflow generated images. Contains a list of objects, each representing one output image.   |
-| `output.errors` | Array of Strings | No       | Present if non-fatal errors or warnings occurred during processing (e.g., S3 upload failure, missing data). |
+| Field | Type | Description |
+|---|---|---|
+| `output.images` | Array | Generated images |
+| `output.images[].filename` | String | Filename assigned by ComfyUI |
+| `output.images[].type` | String | `"base64"` or `"s3_url"` (if S3 configured) |
+| `output.images[].data` | String | Base64 string or S3 URL |
+| `output.errors` | Array | Non-fatal errors/warnings (if any) |
 
-#### `output.images`
+---
 
-Each object in the `output.images` array has the following structure:
+## Environment Variables
 
-| Field Name | Type   | Description                                                                                     |
-| ---------- | ------ | ----------------------------------------------------------------------------------------------- |
-| `filename` | String | The original filename assigned by ComfyUI during generation.                                    |
-| `type`     | String | Indicates the format of the data. Either `"base64"` or `"s3_url"` (if S3 upload is configured). |
-| `data`     | String | Contains either the base64 encoded image string or the S3 URL for the uploaded image file.      |
+### Required
 
-> [!NOTE]
-> The `output.images` field provides a list of all generated images (excluding temporary ones).
->
-> - If S3 upload is **not** configured (default), `type` will be `"base64"` and `data` will contain the base64 encoded image string.
-> - If S3 upload **is** configured, `type` will be `"s3_url"` and `data` will contain the S3 URL. See the [Configuration Guide](docs/configuration.md#example-s3-response) for an S3 example response.
-> - Clients interacting with the API need to handle this list-based structure under `output.images`.
+None. The endpoint works out of the box with no environment variables.
 
-## Usage
+### Optional
 
-To interact with your deployed RunPod endpoint:
+| Variable | Description | Default |
+|---|---|---|
+| **S3 Upload** | | |
+| `BUCKET_ENDPOINT_URL` | S3 endpoint URL (enables S3 upload) | — |
+| `BUCKET_ACCESS_KEY_ID` | AWS access key ID | — |
+| `BUCKET_SECRET_ACCESS_KEY` | AWS secret access key | — |
+| **General** | | |
+| `COMFY_ORG_API_KEY` | Comfy.org API key for API Nodes | — |
+| `COMFY_LOG_LEVEL` | Logging: `DEBUG`, `INFO`, `WARNING`, `ERROR` | `DEBUG` |
+| `REFRESH_WORKER` | Restart worker after each job (`true`/`false`) | `false` |
+| **Advanced** | | |
+| `WEBSOCKET_RECONNECT_ATTEMPTS` | Websocket reconnection attempts | `5` |
+| `WEBSOCKET_RECONNECT_DELAY_S` | Delay between reconnection attempts (seconds) | `3` |
+| `WEBSOCKET_TRACE` | Enable websocket frame tracing | `false` |
 
-1.  **Get API Key:** Generate a key in RunPod [User Settings](https://www.runpod.io/console/serverless/user/settings) (`API Keys` section).
-2.  **Get Endpoint ID:** Find your endpoint ID on the [Serverless Endpoints](https://www.runpod.io/console/serverless/user/endpoints) page or on the `Overview` page of your endpoint.
+---
 
-### Generate Image (Sync Example)
+## Cost Estimates
 
-Send a workflow to the `/runsync` endpoint (waits for completion). Replace `<api_key>` and `<endpoint_id>`. The `-d` value should contain the [JSON input described above](#input).
+All costs are based on [RunPod serverless pricing](https://www.runpod.io/pricing-page) for an A100 80GB.
 
-```bash
-curl -X POST \
-  -H "Authorization: Bearer <api_key>" \
-  -H "Content-Type: application/json" \
-  -d '{"input":{"workflow":{... your workflow JSON ...}}}' \
-  https://api.runpod.ai/v2/<endpoint_id>/runsync
+### Per Image Edit
+
+| Worker Type | Hourly Rate | ~60s Generation | ~90s Generation |
+|---|---|---|---|
+| **Flex** (scale to zero) | $2.72/hr | **~$0.045** | **~$0.068** |
+| **Active** (always on) | $2.17/hr | **~$0.036** | **~$0.054** |
+
+### Keeping a Worker Running 24/7 (Active)
+
+| Period | Cost |
+|---|---|
+| Per hour | $2.17 |
+| Per day | $52.08 |
+| Per month (30 days) | $1,562 |
+
+### Recommended Configuration
+
+| Use Case | Min Workers | Max Workers | Approx. Monthly Cost |
+|---|---|---|---|
+| **Development/testing** | 0 (Flex) | 1 | Pay per request only (~$0.05/image) |
+| **Low traffic** (< 40 images/hr) | 0 (Flex) | 1 | Pay per request only |
+| **Production** (instant response) | 1 (Active) | 3 | ~$1,562/mo base + Flex overflow |
+| **High throughput** | 2 (Active) | 5 | ~$3,124/mo base + Flex overflow |
+
+---
+
+## Troubleshooting
+
+### OOM (Out of Memory) on 48GB GPUs
+
+```
+Allocation on device would exceed allowed memory (out of memory)
+Currently allocated: 44.05 GiB
 ```
 
-You can also use the `/run` endpoint for asynchronous jobs and then poll the `/status` to see when the job is done. Or you [add a `webhook` into your request](https://docs.runpod.io/serverless/endpoints/send-requests#webhook-notifications) to be notified when the job is done.
+The model requires ~41–49 GB VRAM. 48 GB GPUs (A40, A6000, L40S) only have ~44 GiB usable after driver overhead. **Use an A100 80GB** — this is the minimum GPU that reliably runs this model without block swapping.
 
-Refer to [`test_input.json`](./test_input.json) for a complete input example.
+### Docker Push 502 Errors
+
+```
+received unexpected HTTP status: 502 Bad Gateway
+```
+
+Docker Hub's backend struggles with 50+ GB layers. Retry the push — Docker skips already-uploaded layers:
+
+```bash
+docker push your-username/worker-comfyui:latest-hunyuan-instruct-nf4
+```
+
+If it keeps failing, push to GHCR instead (see [Step 2](#step-2-push-to-a-container-registry)).
+
+### Cold Start Takes Too Long
+
+The first-ever cold start pulls the ~55 GB image. Subsequent cold starts only load the model (~2–5 min). To eliminate cold starts entirely, set `Min Workers: 1` (Active worker) — but this costs $2.17/hr continuously.
+
+### Endpoint Shows "Downloading" for a Long Time
+
+RunPod is pulling the Docker image. For a ~55 GB image, the first pull takes 10–30 minutes. This only happens once per worker node — the image is cached after that.
+
+### Model Not Found
+
+If the worker logs show `no HunyuanImage-3.0-* dirs found`, the model wasn't baked into the image correctly. Verify the image was built with `MODEL_TYPE=hunyuan-instruct-nf4` and check that `/comfyui/models/HunyuanImage-3.0-Instruct-Distil-NF4/` exists inside the container.
+
+---
+
+## Available Docker Image Targets
+
+| MODEL_TYPE | Description | Approx. Image Size | Min GPU |
+|---|---|---|---|
+| `base` | ComfyUI only, no models | ~8 GB | Any |
+| `sdxl` | Stable Diffusion XL | ~15 GB | 16 GB+ |
+| `sd3` | Stable Diffusion 3 (needs HF token) | ~12 GB | 16 GB+ |
+| `flux1-schnell` | FLUX.1 schnell (needs HF token) | ~20 GB | 24 GB+ |
+| `flux1-dev` | FLUX.1 dev (needs HF token) | ~20 GB | 24 GB+ |
+| `flux1-dev-fp8` | FLUX.1 dev FP8 quantized | ~15 GB | 24 GB+ |
+| `z-image-turbo` | Z-Image Turbo | ~15 GB | 24 GB+ |
+| `hunyuan-instruct-nf4` | HunyuanImage 3.0 Instruct Distil NF4 | **~55 GB** | **A100 80GB** |
+
+---
 
 ## Getting the Workflow JSON
 
-To get the correct `workflow` JSON for the API:
+To create your own workflow:
 
-1.  Open ComfyUI in your browser.
-2.  In the top navigation, select `Workflow > Export (API)`
-3.  A `workflow.json` file will be downloaded. Use the content of this file as the value for the `input.workflow` field in your API requests.
+1. Open ComfyUI in a browser
+2. Install the [Comfy_HunyuanImage3](https://github.com/EricRollei/Comfy_HunyuanImage3) custom nodes
+3. Build your workflow using the Hunyuan Instruct nodes
+4. Go to **Workflow > Export (API)**
+5. Use the exported JSON as the `input.workflow` value in your API requests
+
+See [`test_resources/workflows/`](./test_resources/workflows/) for example workflows.
+
+---
 
 ## Further Documentation
 
-- **[Deployment Guide](docs/deployment.md):** Detailed steps for deploying on RunPod.
-- **[Configuration Guide](docs/configuration.md):** Full list of environment variables (including S3 setup).
-- **[Customization Guide](docs/customization.md):** Adding custom models and nodes (Network Volumes, Docker builds).
-- **[Development Guide](docs/development.md):** Setting up a local environment for development & testing
-- **[CI/CD Guide](docs/ci-cd.md):** Information about the automated Docker build and publish workflows.
-- **[Acknowledgments](docs/acknowledgments.md):** Credits and thanks
+- **[Configuration Guide](docs/configuration.md):** Full list of environment variables (including S3 setup)
+- **[Development Guide](docs/development.md):** Setting up a local environment for development and testing
