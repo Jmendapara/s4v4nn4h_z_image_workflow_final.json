@@ -85,6 +85,20 @@ BUILD_ARGS=(
     --build-arg "MODEL_TYPE=${MODEL_TYPE}"
     --build-arg "COMFYUI_VERSION=${COMFYUI_VERSION}"
 )
+
+# Hunyuan models need CUDA 12.8 PyTorch for Blackwell GPU (sm_120) support.
+# This also works on older GPUs (A100 sm_80, H100 sm_90).
+case "${MODEL_TYPE}" in
+    hunyuan-instruct-nf4|hunyuan-instruct-int8)
+        BUILD_ARGS+=(
+            --build-arg "BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04"
+            --build-arg "ENABLE_PYTORCH_UPGRADE=true"
+            --build-arg "PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu128"
+        )
+        echo "       Using CUDA 12.8 base + PyTorch upgrade (Blackwell compatible)"
+        ;;
+esac
+
 if [ -n "${HUGGINGFACE_ACCESS_TOKEN}" ]; then
     BUILD_ARGS+=(--build-arg "HUGGINGFACE_ACCESS_TOKEN=${HUGGINGFACE_ACCESS_TOKEN}")
 fi
