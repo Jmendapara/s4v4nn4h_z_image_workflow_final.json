@@ -2,28 +2,49 @@
 set -euo pipefail
 
 # =============================================================================
-# Setup ComfyUI + HunyuanImage 3.0 NF4 on a RunPod GPU Pod
+# Setup ComfyUI + HunyuanImage 3.0 on a RunPod GPU Pod
 #
 # Usage:
-#   1. Create a RunPod GPU Pod (A100 80GB, 100GB container disk, 60GB volume)
+#   1. Create a RunPod GPU Pod
+#        - NF4:  A100 80GB,  100GB container disk, 60GB volume
+#        - INT8: H100/H200 or RTX 6000 Blackwell (96GB+), 200GB+ disk
 #   2. Open the web terminal or SSH in
 #   3. Run:
+#        # For NF4 (default):
 #        curl -fsSL https://raw.githubusercontent.com/Jmendapara/s4v4nn4h_z_image_workflow_final.json/main/scripts/setup-pod.sh | bash
 #
-#   Or if already cloned:
-#        bash scripts/setup-pod.sh
+#        # For INT8:
+#        curl -fsSL https://raw.githubusercontent.com/Jmendapara/s4v4nn4h_z_image_workflow_final.json/main/scripts/setup-pod.sh | MODEL_TYPE=hunyuan-instruct-int8 bash
 #
 # The script installs ComfyUI, the Comfy_HunyuanImage3 nodes, downloads the
-# NF4 model to the persistent volume, and starts ComfyUI on port 8188.
+# selected model to the persistent volume, and starts ComfyUI on port 8188.
 # =============================================================================
 
+MODEL_TYPE="${MODEL_TYPE:-hunyuan-instruct-nf4}"
 WORKSPACE="${WORKSPACE:-/workspace}"
 COMFYUI_DIR="${WORKSPACE}/ComfyUI"
-MODEL_DIR="${COMFYUI_DIR}/models/HunyuanImage-3.0-Instruct-Distil-NF4"
+
+case "${MODEL_TYPE}" in
+  hunyuan-instruct-int8)
+    HF_REPO="EricRollei/HunyuanImage-3.0-Instruct-Distil-INT8-v2"
+    MODEL_FOLDER="HunyuanImage-3.0-Instruct-Distil-INT8"
+    MODEL_SIZE="~83 GB"
+    ;;
+  hunyuan-instruct-nf4|*)
+    HF_REPO="EricRollei/HunyuanImage-3.0-Instruct-Distil-NF4-v2"
+    MODEL_FOLDER="HunyuanImage-3.0-Instruct-Distil-NF4"
+    MODEL_SIZE="~48 GB"
+    ;;
+esac
+
+MODEL_DIR="${COMFYUI_DIR}/models/${MODEL_FOLDER}"
 
 echo "============================================="
-echo " ComfyUI + HunyuanImage 3.0 NF4 Pod Setup"
+echo " ComfyUI + HunyuanImage 3.0 Pod Setup"
 echo "============================================="
+echo "  Model type: ${MODEL_TYPE}"
+echo "  HF repo:    ${HF_REPO}"
+echo "  Model size: ${MODEL_SIZE}"
 echo "  Workspace:  ${WORKSPACE}"
 echo "  ComfyUI:    ${COMFYUI_DIR}"
 echo "  Model dir:  ${MODEL_DIR}"
@@ -56,7 +77,7 @@ pip install -r "${CUSTOM_NODES_DIR}/requirements.txt"
 echo "[3/5] Upgrading key dependencies..."
 pip install \
     "diffusers>=0.31.0" \
-    "transformers>=4.47.0" \
+    "transformers>=4.47.0,<5.0.0" \
     "bitsandbytes>=0.48.2" \
     "accelerate>=1.2.1" \
     "huggingface_hub[hf_xet]"
@@ -65,12 +86,12 @@ pip install \
 if [ -d "${MODEL_DIR}" ] && [ "$(ls -A "${MODEL_DIR}" 2>/dev/null)" ]; then
     echo "[4/5] Model already downloaded at ${MODEL_DIR}"
 else
-    echo "[4/5] Downloading HunyuanImage-3.0-Instruct-Distil-NF4-v2 (~48 GB)..."
+    echo "[4/5] Downloading ${HF_REPO} (${MODEL_SIZE})..."
     echo "       This will take 10-30 minutes depending on bandwidth."
     python3 -c "
 from huggingface_hub import snapshot_download
 snapshot_download(
-    'EricRollei/HunyuanImage-3.0-Instruct-Distil-NF4-v2',
+    '${HF_REPO}',
     local_dir='${MODEL_DIR}'
 )
 "
@@ -78,7 +99,7 @@ snapshot_download(
 fi
 
 # Create the v2 alias symlink if it doesn't exist
-V2_LINK="${COMFYUI_DIR}/models/HunyuanImage-3.0-Instruct-Distil-NF4-v2"
+V2_LINK="${COMFYUI_DIR}/models/${MODEL_FOLDER}-v2"
 if [ ! -e "${V2_LINK}" ]; then
     ln -s "${MODEL_DIR}" "${V2_LINK}"
     echo "[4/5] Created v2 symlink alias."

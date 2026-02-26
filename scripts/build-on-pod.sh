@@ -9,13 +9,13 @@ set -euo pipefail
 #   export DOCKERHUB_USERNAME="your-dockerhub-user"
 #   export DOCKERHUB_TOKEN="your-dockerhub-access-token"
 #   export IMAGE_TAG="your-user/worker-comfyui:latest-hunyuan-instruct-nf4"
-#   export MODEL_TYPE="hunyuan-instruct-nf4"   # or z-image-turbo, base, etc.
+#   export MODEL_TYPE="hunyuan-instruct-nf4"   # or hunyuan-instruct-int8, z-image-turbo, base, etc.
 #   bash build-on-pod.sh
 #
 # Prerequisites:
 #   - A RunPod GPU pod with the "RunPod Pytorch" template (or any template
 #     that has Docker pre-installed, or use a Docker-in-Docker template).
-#   - At least 240 GB disk (for hunyuan-instruct-nf4; 80 GB for base).
+#   - At least 240 GB disk for hunyuan-instruct-nf4, 400 GB for hunyuan-instruct-int8, 80 GB for base.
 #   - Git and internet access (default on RunPod pods).
 # =============================================================================
 

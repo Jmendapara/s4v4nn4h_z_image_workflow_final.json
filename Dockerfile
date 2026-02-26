@@ -88,8 +88,8 @@ ENV PIP_NO_INPUT=1
 WORKDIR /comfyui
 RUN comfy-node-install https://github.com/EricRollei/Comfy_HunyuanImage3
 
-# Pin dependency versions for HunyuanImage3. transformers 5.x breaks NF4
-# model loading (tries to reinitialize quantized Byte weights with .normal_()).
+# Pin dependency versions for HunyuanImage3. transformers 5.x breaks NF4/INT8
+# model loading (tries to reinitialize quantized weights with .normal_()).
 RUN uv pip install \
     "diffusers>=0.31.0" \
     "transformers>=4.47.0,<5.0.0" \
@@ -163,13 +163,21 @@ RUN if [ "$MODEL_TYPE" = "hunyuan-instruct-nf4" ]; then \
       python3 -c "from huggingface_hub import snapshot_download; snapshot_download('EricRollei/HunyuanImage-3.0-Instruct-Distil-NF4-v2', local_dir='/comfyui/models/HunyuanImage-3.0-Instruct-Distil-NF4')"; \
     fi
 
+RUN if [ "$MODEL_TYPE" = "hunyuan-instruct-int8" ]; then \
+      uv pip install "huggingface_hub[hf_xet]" && \
+      python3 -c "from huggingface_hub import snapshot_download; snapshot_download('EricRollei/HunyuanImage-3.0-Instruct-Distil-INT8-v2', local_dir='/comfyui/models/HunyuanImage-3.0-Instruct-Distil-INT8')"; \
+    fi
+
 # Stage 3: Final image
 FROM base AS final
 
 # Copy models from stage 2 to the final image
 COPY --from=downloader /comfyui/models /comfyui/models
 
-# Re-create the symlink alias in the final image (avoids COPY resolving it and duplicating data)
+# Re-create symlink aliases in the final image (avoids COPY resolving them and duplicating data)
 RUN if [ -d /comfyui/models/HunyuanImage-3.0-Instruct-Distil-NF4 ]; then \
       ln -s HunyuanImage-3.0-Instruct-Distil-NF4 /comfyui/models/HunyuanImage-3.0-Instruct-Distil-NF4-v2; \
+    fi && \
+    if [ -d /comfyui/models/HunyuanImage-3.0-Instruct-Distil-INT8 ]; then \
+      ln -s HunyuanImage-3.0-Instruct-Distil-INT8 /comfyui/models/HunyuanImage-3.0-Instruct-Distil-INT8-v2; \
     fi

@@ -1,6 +1,6 @@
 # HunyuanImage 3.0 — Serverless ComfyUI Worker
 
-> [ComfyUI](https://github.com/comfyanonymous/ComfyUI) + [HunyuanImage 3.0 Instruct Distil NF4](https://huggingface.co/EricRollei/HunyuanImage-3.0-Instruct-Distil-NF4-v2) as a serverless API on [RunPod](https://www.runpod.io/)
+> [ComfyUI](https://github.com/comfyanonymous/ComfyUI) + HunyuanImage 3.0 Instruct Distil ([NF4](https://huggingface.co/EricRollei/HunyuanImage-3.0-Instruct-Distil-NF4-v2) or [INT8](https://huggingface.co/EricRollei/HunyuanImage-3.0-Instruct-Distil-INT8-v2)) as a serverless API on [RunPod](https://www.runpod.io/)
 
 ---
 
@@ -21,43 +21,50 @@
 
 ## Overview
 
-This project packages ComfyUI with the HunyuanImage 3.0 Instruct Distil NF4 model baked into a Docker image. The image runs as a serverless worker on RunPod — you send a workflow via API and receive generated/edited images back as base64 strings or S3 URLs.
+This project packages ComfyUI with a HunyuanImage 3.0 Instruct Distil model baked into a Docker image. Two quantization variants are supported — **NF4** (4-bit, smaller, fits A100 80GB) and **INT8** (8-bit, higher quality, needs 96GB+ VRAM). The image runs as a serverless worker on RunPod — you send a workflow via API and receive generated/edited images back as base64 strings or S3 URLs.
 
-The model is baked directly into the Docker image (~55 GB total). No network volume is required.
+The model is baked directly into the Docker image. No network volume is required.
 
-## Model Details
+## Model Variants
 
-| Property | Value |
-|---|---|
-| Model | [HunyuanImage 3.0 Instruct Distil NF4 v2](https://huggingface.co/EricRollei/HunyuanImage-3.0-Instruct-Distil-NF4-v2) |
-| Architecture | Mixture-of-Experts Diffusion Transformer |
-| Parameters | 80B total, 13B active per token |
-| Quantization | NF4 (4-bit) via bitsandbytes |
-| Diffusion Steps | 8 (CFG-distilled) |
-| Capabilities | Text-to-image, image editing, multi-image fusion |
-| On-disk Size | ~48 GB |
-| VRAM Required | ~41–49 GB (A100 80GB recommended) |
-| ComfyUI Nodes | [Comfy_HunyuanImage3](https://github.com/EricRollei/Comfy_HunyuanImage3) |
+| Property | NF4 | INT8 |
+|---|---|---|
+| Model | [Instruct Distil NF4 v2](https://huggingface.co/EricRollei/HunyuanImage-3.0-Instruct-Distil-NF4-v2) | [Instruct Distil INT8 v2](https://huggingface.co/EricRollei/HunyuanImage-3.0-Instruct-Distil-INT8-v2) |
+| Architecture | Mixture-of-Experts Diffusion Transformer | Mixture-of-Experts Diffusion Transformer |
+| Parameters | 80B total, 13B active per token | 80B total, 13B active per token |
+| Quantization | NF4 (4-bit) via bitsandbytes | INT8 (8-bit) via bitsandbytes |
+| Diffusion Steps | 8 (CFG-distilled) | 8 (CFG-distilled) |
+| Capabilities | Text-to-image, image editing, multi-image fusion | Text-to-image, image editing, multi-image fusion |
+| On-disk Size | ~48 GB | ~83 GB |
+| Docker Image Size | ~55 GB | ~90 GB |
+| VRAM Required | ~41–49 GB | ~92–100 GB |
+| Recommended GPU | A100 80GB | RTX 6000 Blackwell 96GB / H100 80GB (with block swap) |
+| `MODEL_TYPE` env | `hunyuan-instruct-nf4` | `hunyuan-instruct-int8` |
+| ComfyUI Nodes | [Comfy_HunyuanImage3](https://github.com/EricRollei/Comfy_HunyuanImage3) | [Comfy_HunyuanImage3](https://github.com/EricRollei/Comfy_HunyuanImage3) |
+
+**When to choose NF4 vs INT8:**
+- **NF4** — Best value. Fits on A100 80GB without block swapping. Good image quality, fastest cold starts due to smaller image.
+- **INT8** — Better image quality (keeps attention projections and embeddings in BF16). Requires 96GB+ VRAM to run without block swapping, or 80GB with 4-8 blocks swapped to CPU.
 
 ---
 
 ## Step 1: Build the Docker Image
 
-The image is ~55 GB and must be built on a remote server with enough disk space. A GPU is **not** needed for building.
+The image must be built on a remote server with enough disk space. A GPU is **not** needed for building.
 
 ### 1.1 Create a Cloud Server
 
 Use a cheap VPS from [Hetzner Cloud](https://console.hetzner.cloud/) or any provider.
 
-| Setting | Value |
-|---|---|
-| Provider | Hetzner Cloud (or any VPS) |
-| OS | Ubuntu 24.04 |
-| Server type | CPX51 or larger (8 vCPU, 16 GB RAM, 240 GB disk) |
-| Disk | 240 GB minimum for `hunyuan-instruct-nf4` |
-| Estimated cost | ~$0.04/hour |
+| Setting | NF4 | INT8 |
+|---|---|---|
+| Provider | Hetzner Cloud (or any VPS) | Hetzner Cloud (or any VPS) |
+| OS | Ubuntu 24.04 | Ubuntu 24.04 |
+| Server type | CPX51 (8 vCPU, 16 GB RAM, 240 GB disk) | Dedicated or volume-mounted (400 GB+ disk) |
+| Disk | 240 GB minimum | 400 GB minimum |
+| Estimated cost | ~$0.04/hour | ~$0.08/hour |
 
-> **Important:** The CPX41 (160 GB disk) may not be enough for building this image. Docker needs space for intermediate build layers in addition to the final image. Use 240 GB+ to be safe.
+> **Important:** Docker needs space for intermediate build layers in addition to the final image. The INT8 model is ~83 GB on disk, so you need significantly more space than for NF4.
 
 ### 1.2 SSH into the Server
 
@@ -74,11 +81,20 @@ systemctl start docker
 
 ### 1.4 Set Environment Variables
 
+**For NF4:**
 ```bash
 export DOCKERHUB_USERNAME="your-dockerhub-username"
 export DOCKERHUB_TOKEN="dckr_pat_your_access_token"
 export IMAGE_TAG="your-dockerhub-username/worker-comfyui:latest-hunyuan-instruct-nf4"
 export MODEL_TYPE="hunyuan-instruct-nf4"
+```
+
+**For INT8:**
+```bash
+export DOCKERHUB_USERNAME="your-dockerhub-username"
+export DOCKERHUB_TOKEN="dckr_pat_your_access_token"
+export IMAGE_TAG="your-dockerhub-username/worker-comfyui:latest-hunyuan-instruct-int8"
+export MODEL_TYPE="hunyuan-instruct-int8"
 ```
 
 ### 1.5 Run the Build Script
@@ -93,10 +109,10 @@ This script:
 1. Installs Docker if needed
 2. Logs into Docker Hub
 3. Clones this repo
-4. Builds the Docker image with PyTorch 2.8+, bitsandbytes, and the HunyuanImage 3.0 NF4 model baked in
+4. Builds the Docker image with bitsandbytes and the selected HunyuanImage 3.0 model baked in
 5. Pushes the image to Docker Hub
 
-Expect **60–90 minutes** for the full build + push.
+Expect **60–90 minutes** for NF4 or **90–150 minutes** for INT8 (larger model download and push).
 
 ### 1.6 Delete the Server
 
@@ -110,13 +126,15 @@ The build script pushes to Docker Hub automatically. If the push fails (502 erro
 
 ```bash
 docker push your-dockerhub-username/worker-comfyui:latest-hunyuan-instruct-nf4
+# or for INT8:
+docker push your-dockerhub-username/worker-comfyui:latest-hunyuan-instruct-int8
 ```
 
 Docker skips layers that already uploaded successfully and only retries the failed ones.
 
 ### Alternative: Push to GitHub Container Registry
 
-GHCR handles large layers more reliably than Docker Hub. To use it instead:
+GHCR handles large layers more reliably than Docker Hub. Especially recommended for INT8 (~90 GB image). To use it instead:
 
 ```bash
 echo YOUR_GITHUB_PAT | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
@@ -145,10 +163,24 @@ Go to [Settings > API Keys](https://www.runpod.io/console/serverless/user/settin
 2. Click **+ New Endpoint**
 3. Configure with these settings:
 
+**For NF4:**
+
 | Setting | Value | Notes |
 |---|---|---|
 | **Container Image** | `your-dockerhub-username/worker-comfyui:latest-hunyuan-instruct-nf4` | Or `ghcr.io/...` if using GHCR |
 | **GPU** | **A100 80GB** | Required — 48 GB GPUs will OOM |
+| **Min Workers** | `0` | Scales to zero when idle (no cost) |
+| **Max Workers** | `1` | Increase for higher throughput |
+| **Container Disk** | `20 GB` | Scratch space only; model is in the image |
+| **Idle Timeout** | `5` seconds | How long a warm worker waits before shutting down |
+| **FlashBoot** | Enabled (if available) | Speeds up cold starts |
+
+**For INT8:**
+
+| Setting | Value | Notes |
+|---|---|---|
+| **Container Image** | `your-dockerhub-username/worker-comfyui:latest-hunyuan-instruct-int8` | Or `ghcr.io/...` if using GHCR |
+| **GPU** | **RTX 6000 Blackwell 96GB** or **H100/H200** | 80GB GPUs need `blocks_to_swap: 4-8` |
 | **Min Workers** | `0` | Scales to zero when idle (no cost) |
 | **Max Workers** | `1` | Increase for higher throughput |
 | **Container Disk** | `20 GB` | Scratch space only; model is in the image |
@@ -182,14 +214,14 @@ If you need optional features, add these in the RunPod endpoint template under *
 ### 4.1 First Request (Cold Start)
 
 The first request after the endpoint is created (or after it scales to zero) triggers a **cold start**:
-- RunPod pulls the ~55 GB image (first time only — cached after that)
+- RunPod pulls the Docker image (first time only — cached after that)
 - ComfyUI starts and loads the model into GPU VRAM
 
-The first-ever cold start takes **10–30 minutes** (image pull). Subsequent cold starts take **2–5 minutes** (model loading only, image is cached).
+The first-ever cold start takes **10–30 minutes** for NF4 (~55 GB) or **20–45 minutes** for INT8 (~90 GB) due to image pull. Subsequent cold starts take **2–5 minutes** (model loading only, image is cached).
 
 ### 4.2 Text-to-Image Request
 
-Send a workflow to the `/runsync` endpoint:
+Send a workflow to the `/runsync` endpoint. Use the `model_name` that matches your deployed image (`HunyuanImage-3.0-Instruct-Distil-NF4` or `HunyuanImage-3.0-Instruct-Distil-INT8`):
 
 ```bash
 curl -X POST "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/runsync" \
@@ -320,8 +352,8 @@ Key parameters you can adjust in the workflow:
 | `instruction` | HunyuanInstructImageEdit | The edit instruction | Any text prompt |
 | `bot_task` | Generate / ImageEdit | Generation mode | `image` (fastest), `recaption` (medium), `think_recaption` (best quality) |
 | `resolution` | HunyuanInstructGenerate | Output resolution | Must use exact format: `"1024x1024 (1:1 Square)"` — see full list below |
-| `blocks_to_swap` | HunyuanInstructLoader | Offload transformer blocks to CPU | `0` for A100 80GB, `16`+ for 48GB GPUs |
-| `vram_reserve_gb` | HunyuanInstructLoader | VRAM to keep free for inference | `30` recommended for NF4 on A100 80GB |
+| `blocks_to_swap` | HunyuanInstructLoader | Offload transformer blocks to CPU | NF4: `0` for A100 80GB, `16`+ for 48GB. INT8: `0` for 96GB, `4-8` for 80GB |
+| `vram_reserve_gb` | HunyuanInstructLoader | VRAM to keep free for inference | `30` recommended for both NF4 and INT8 |
 | `seed` | Generate / ImageEdit | Random seed | `-1` for random, or a fixed integer |
 | `steps` | Generate / ImageEdit | Diffusion steps | `-1` for default (8 steps) |
 | `guidance_scale` | Generate / ImageEdit | CFG scale | `-1` for default (2.5) |
@@ -465,7 +497,9 @@ Allocation on device would exceed allowed memory (out of memory)
 Currently allocated: 44.05 GiB
 ```
 
-The model requires ~41–49 GB VRAM. 48 GB GPUs (A40, A6000, L40S) only have ~44 GiB usable after driver overhead. **Use an A100 80GB** — this is the minimum GPU that reliably runs this model without block swapping.
+**NF4:** Requires ~41–49 GB VRAM. 48 GB GPUs (A40, A6000, L40S) only have ~44 GiB usable after driver overhead. **Use an A100 80GB** — this is the minimum GPU that reliably runs NF4 without block swapping.
+
+**INT8:** Requires ~92–100 GB VRAM. **Use a 96GB+ GPU** (RTX 6000 Blackwell) without block swap, or an 80GB GPU (H100) with `blocks_to_swap: 4-8`.
 
 ### Docker Push 502 Errors
 
@@ -483,11 +517,11 @@ If it keeps failing, push to GHCR instead (see [Step 2](#step-2-push-to-a-contai
 
 ### Cold Start Takes Too Long
 
-The first-ever cold start pulls the ~55 GB image. Subsequent cold starts only load the model (~2–5 min). To eliminate cold starts entirely, set `Min Workers: 1` (Active worker) — but this costs $2.17/hr continuously.
+The first-ever cold start pulls the Docker image (~55 GB for NF4, ~90 GB for INT8). Subsequent cold starts only load the model (~2–5 min). To eliminate cold starts entirely, set `Min Workers: 1` (Active worker) — but this costs $2.17/hr+ continuously.
 
 ### Endpoint Shows "Downloading" for a Long Time
 
-RunPod is pulling the Docker image. For a ~55 GB image, the first pull takes 10–30 minutes. This only happens once per worker node — the image is cached after that.
+RunPod is pulling the Docker image. For NF4 (~55 GB) the first pull takes 10–30 minutes; for INT8 (~90 GB) it takes 20–45 minutes. This only happens once per worker node — the image is cached after that.
 
 ### Blank Image / "Prompt executed in 0.00 seconds"
 
@@ -499,7 +533,9 @@ If the endpoint returns a tiny blank PNG and the logs show `Prompt executed in 0
 
 ### Model Not Found
 
-If the worker logs show `no HunyuanImage-3.0-* dirs found`, the model wasn't baked into the image correctly. Verify the image was built with `MODEL_TYPE=hunyuan-instruct-nf4` and check that `/comfyui/models/HunyuanImage-3.0-Instruct-Distil-NF4/` exists inside the container.
+If the worker logs show `no HunyuanImage-3.0-* dirs found`, the model wasn't baked into the image correctly. Verify the image was built with the correct `MODEL_TYPE` and check that the appropriate model directory exists inside the container:
+- NF4: `/comfyui/models/HunyuanImage-3.0-Instruct-Distil-NF4/`
+- INT8: `/comfyui/models/HunyuanImage-3.0-Instruct-Distil-INT8/`
 
 ---
 
@@ -515,6 +551,7 @@ If the worker logs show `no HunyuanImage-3.0-* dirs found`, the model wasn't bak
 | `flux1-dev-fp8` | FLUX.1 dev FP8 quantized | ~15 GB | 24 GB+ |
 | `z-image-turbo` | Z-Image Turbo | ~15 GB | 24 GB+ |
 | `hunyuan-instruct-nf4` | HunyuanImage 3.0 Instruct Distil NF4 | **~55 GB** | **A100 80GB** |
+| `hunyuan-instruct-int8` | HunyuanImage 3.0 Instruct Distil INT8 | **~90 GB** | **96GB+ (RTX 6000 Blackwell)** |
 
 ---
 
@@ -528,19 +565,21 @@ If the serverless deployment isn't working or you need to debug interactively, y
 2. Click **+ GPU Pod**
 3. Configure:
 
-| Setting | Value |
-|---|---|
-| GPU | A100 80GB (or RTX PRO 6000 / any 48GB+ GPU) |
-| Template | ComfyUI (RunPod's official template) |
-| Container Disk | 100 GB |
-| Volume Disk | 60 GB (persists across restarts) |
-| Expose HTTP Ports | `8188` |
+| Setting | NF4 | INT8 |
+|---|---|---|
+| GPU | A100 80GB | RTX 6000 Blackwell 96GB / H100 |
+| Template | ComfyUI (RunPod's official template) | ComfyUI (RunPod's official template) |
+| Container Disk | 100 GB | 200 GB |
+| Volume Disk | 60 GB | 100 GB |
+| Expose HTTP Ports | `8188` | `8188` |
 
-4. Click **Deploy** (~$1.64/hr for A100 80GB)
+4. Click **Deploy**
 
 ### Run the Setup Script
 
-Open the pod's web terminal or SSH in and paste this entire block:
+Open the pod's web terminal or SSH in and paste this entire block.
+
+**For NF4:**
 
 ```bash
 # Install Comfy_HunyuanImage3 custom nodes
@@ -566,9 +605,35 @@ cd /workspace/runpod-slim/ComfyUI
 .venv/bin/python main.py --listen 0.0.0.0 --port 8188
 ```
 
-> **Important:** Packages must be installed into the `.venv` (using `.venv/bin/pip`), and ComfyUI must be started with `.venv/bin/python`. The system Python has mismatched torchvision that will crash ComfyUI. Also, `transformers` must be pinned to `<5.0.0` -- version 5.x breaks NF4 model loading.
+**For INT8:**
 
-Total setup time: ~20-40 minutes (mostly model download). The model download only happens once if you use a persistent volume.
+```bash
+# Install Comfy_HunyuanImage3 custom nodes
+cd /workspace/runpod-slim/ComfyUI/custom_nodes
+git clone https://github.com/EricRollei/Comfy_HunyuanImage3
+cd Comfy_HunyuanImage3
+/workspace/runpod-slim/ComfyUI/.venv/bin/pip install -r requirements.txt
+/workspace/runpod-slim/ComfyUI/.venv/bin/pip install "diffusers>=0.31.0" "transformers>=4.47.0,<5.0.0" "bitsandbytes>=0.48.2" "accelerate>=1.2.1" "huggingface_hub[hf_xet]"
+
+# Download the model (~83 GB, takes 20-60 min)
+python3 -c "
+from huggingface_hub import snapshot_download
+snapshot_download(
+    'EricRollei/HunyuanImage-3.0-Instruct-Distil-INT8-v2',
+    local_dir='/workspace/runpod-slim/ComfyUI/models/HunyuanImage-3.0-Instruct-Distil-INT8'
+)
+"
+ln -s /workspace/runpod-slim/ComfyUI/models/HunyuanImage-3.0-Instruct-Distil-INT8 /workspace/runpod-slim/ComfyUI/models/HunyuanImage-3.0-Instruct-Distil-INT8-v2
+
+# Kill existing ComfyUI and restart with the venv
+pkill -f "main.py" 2>/dev/null; sleep 2
+cd /workspace/runpod-slim/ComfyUI
+.venv/bin/python main.py --listen 0.0.0.0 --port 8188
+```
+
+> **Important:** Packages must be installed into the `.venv` (using `.venv/bin/pip`), and ComfyUI must be started with `.venv/bin/python`. The system Python has mismatched torchvision that will crash ComfyUI. Also, `transformers` must be pinned to `<5.0.0` -- version 5.x breaks NF4/INT8 model loading.
+
+Total setup time: ~20-40 minutes for NF4, ~40-70 minutes for INT8 (mostly model download). The model download only happens once if you use a persistent volume.
 
 ### Access the Web UI
 
@@ -576,11 +641,19 @@ Click **Connect** on your pod in the RunPod dashboard, then click the **HTTP 818
 
 ### Test with curl
 
-From a second terminal tab on the pod, send a text-to-image request:
+From a second terminal tab on the pod, send a text-to-image request. Replace the `model_name` with the variant you downloaded:
 
+**NF4:**
 ```bash
 curl -X POST http://localhost:8188/prompt -H "Content-Type: application/json" -d '{"prompt":{"1":{"inputs":{"model_name":"HunyuanImage-3.0-Instruct-Distil-NF4","force_reload":false,"attention_impl":"sdpa","moe_impl":"eager","vram_reserve_gb":30,"blocks_to_swap":0},"class_type":"HunyuanInstructLoader"},"2":{"inputs":{"model":["1",0],"prompt":"A golden retriever sitting on a beach at sunset","bot_task":"image","seed":42,"system_prompt":"dynamic","resolution":"1024x1024 (1:1 Square)","steps":-1,"guidance_scale":-1,"flow_shift":2.8,"max_new_tokens":2048,"verbose":0},"class_type":"HunyuanInstructGenerate"},"3":{"inputs":{"images":["2",0]},"class_type":"PreviewImage"}}}'
 ```
+
+**INT8:**
+```bash
+curl -X POST http://localhost:8188/prompt -H "Content-Type: application/json" -d '{"prompt":{"1":{"inputs":{"model_name":"HunyuanImage-3.0-Instruct-Distil-INT8","force_reload":false,"attention_impl":"sdpa","moe_impl":"eager","vram_reserve_gb":30,"blocks_to_swap":0},"class_type":"HunyuanInstructLoader"},"2":{"inputs":{"model":["1",0],"prompt":"A golden retriever sitting on a beach at sunset","bot_task":"image","seed":42,"system_prompt":"dynamic","resolution":"1024x1024 (1:1 Square)","steps":-1,"guidance_scale":-1,"flow_shift":2.8,"max_new_tokens":2048,"verbose":0},"class_type":"HunyuanInstructGenerate"},"3":{"inputs":{"images":["2",0]},"class_type":"PreviewImage"}}}'
+```
+
+> For INT8 on 80GB GPUs, set `"blocks_to_swap": 4` (or up to 8) to offload transformer blocks to CPU.
 
 Watch the first terminal for model loading and diffusion progress. The generated image will appear in the web UI's preview node.
 
