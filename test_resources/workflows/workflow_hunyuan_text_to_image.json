@@ -34,11 +34,12 @@
   },
   "3": {
     "inputs": {
+      "filename_prefix": "ComfyUI",
       "images": ["2", 0]
     },
-    "class_type": "PreviewImage",
+    "class_type": "SaveImage",
     "_meta": {
-      "title": "Preview Image"
+      "title": "Save Image"
     }
   }
 }

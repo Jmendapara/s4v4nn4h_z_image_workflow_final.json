@@ -7,7 +7,7 @@
 ## Table of Contents
 
 - [Overview](#overview)
-- [Model Details](#model-details)
+- [Model Variants](#model-variants)
 - [Step 1: Build the Docker Image](#step-1-build-the-docker-image)
 - [Step 2: Push to a Container Registry](#step-2-push-to-a-container-registry)
 - [Step 3: Deploy on RunPod](#step-3-deploy-on-runpod)
@@ -15,6 +15,7 @@
 - [API Specification](#api-specification)
 - [Environment Variables](#environment-variables)
 - [Cost Estimates](#cost-estimates)
+- [Multi-Image Fusion](#multi-image-fusion)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -45,6 +46,17 @@ The model is baked directly into the Docker image. No network volume is required
 **When to choose NF4 vs INT8:**
 - **NF4** — Best value. Fits on A100 80GB without block swapping. Good image quality, fastest cold starts due to smaller image.
 - **INT8** — Better image quality (keeps attention projections and embeddings in BF16). Requires 96GB+ VRAM to run without block swapping, or 80GB with 4-8 blocks swapped to CPU.
+
+**GPU Compatibility:**
+
+Both Docker images are built with CUDA 12.8 PyTorch, supporting A100 (sm_80), H100 (sm_90), and Blackwell (sm_120) GPUs.
+
+| | A100 80GB | H100 80GB | RTX 6000 Blackwell 96GB |
+|---|---|---|---|
+| **NF4 text-to-image / edit** | Works (`blocks_to_swap: 0`) | Works | Works |
+| **NF4 3-image fusion** | Likely OOMs | Likely OOMs | Works (`blocks_to_swap: 16`) |
+| **INT8 text-to-image / edit** | `blocks_to_swap: 4-8` | `blocks_to_swap: 4-8` | Works (`blocks_to_swap: 0`) |
+| **INT8 3-image fusion** | Likely OOMs | Likely OOMs | `blocks_to_swap: 16`+ |
 
 ---
 
@@ -349,27 +361,44 @@ Key parameters you can adjust in the workflow:
 | Parameter | Node | Description | Options |
 |---|---|---|---|
 | `prompt` | HunyuanInstructGenerate | Text prompt for generation | Any text |
-| `instruction` | HunyuanInstructImageEdit | The edit instruction | Any text prompt |
-| `bot_task` | Generate / ImageEdit | Generation mode | `image` (fastest), `recaption` (medium), `think_recaption` (best quality) |
-| `resolution` | HunyuanInstructGenerate | Output resolution | Must use exact format: `"1024x1024 (1:1 Square)"` — see full list below |
-| `blocks_to_swap` | HunyuanInstructLoader | Offload transformer blocks to CPU | NF4: `0` for A100 80GB, `16`+ for 48GB. INT8: `0` for 96GB, `4-8` for 80GB |
-| `vram_reserve_gb` | HunyuanInstructLoader | VRAM to keep free for inference | `30` recommended for both NF4 and INT8 |
-| `seed` | Generate / ImageEdit | Random seed | `-1` for random, or a fixed integer |
-| `steps` | Generate / ImageEdit | Diffusion steps | `-1` for default (8 steps) |
-| `guidance_scale` | Generate / ImageEdit | CFG scale | `-1` for default (2.5) |
+| `instruction` | HunyuanInstructImageEdit / MultiFusion | The edit/fusion instruction | Any text. For fusion, reference images as "image 1", "image 2", etc. |
+| `bot_task` | Generate / ImageEdit / MultiFusion | Generation mode | `image` (fastest), `recaption` (medium), `think_recaption` (best quality) |
+| `resolution` | Generate / MultiFusion | Output resolution | Must use exact format: `"1024x1024 (1:1 Square)"` — see full list below |
+| `blocks_to_swap` | HunyuanInstructLoader | Offload transformer blocks to CPU | `0` for text-to-image/single edit; `16` for 3-image fusion on NF4. See [Multi-Image Fusion](#multi-image-fusion) |
+| `force_reload` | HunyuanInstructLoader | Force model reload | Set `true` when changing `blocks_to_swap` — the model is cached and won't pick up new settings otherwise |
+| `vram_reserve_gb` | HunyuanInstructLoader | VRAM to keep free for inference | `30` recommended. **Has no effect on NF4 models** — use `blocks_to_swap` instead |
+| `image_1` .. `image_5` | HunyuanInstructMultiFusion | Input images for fusion | `image_1` required, `image_2`-`image_3` official, `image_4`-`image_5` experimental |
+| `seed` | Generate / ImageEdit / MultiFusion | Random seed | `-1` for random, or a fixed integer |
+| `steps` | Generate / ImageEdit / MultiFusion | Diffusion steps | `-1` for default (8 steps) |
+| `guidance_scale` | Generate / ImageEdit / MultiFusion | CFG scale | `-1` for default (2.5) |
 
 ### 4.5 Resolution Options
 
 The `resolution` field requires an exact string from this list (33 model-native bucket resolutions + Auto). Using a bare value like `"1024x1024"` will fail.
 
-**Portraits:**
-`"512x2048 (1:4 Tall)"`, `"512x1920 (4:15 Tall)"`, `"576x1792 (9:28 Portrait)"`, `"576x1664 (9:26 Portrait)"`, `"640x1536 (5:12 Portrait)"`, `"640x1408 (5:11 Portrait)"`, `"704x1344 (11:21 Portrait)"`, `"704x1216 (11:19 Portrait)"`, `"768x1152 (2:3 Portrait)"`, `"768x1088 (12:17 Portrait)"`, `"832x1024 (13:16 Portrait)"`, `"832x960 (13:15 Portrait)"`, `"896x1152 (7:9 Portrait)"`, `"960x1088 (15:17 Portrait)"`
+**Auto:**
+`"Auto (model predicts)"`
+
+**Extreme Tall (1:4 to 1:3):**
+`"512x2048 (1:4 Tall)"`, `"512x1984 (~1:4 Tall)"`, `"512x1920 (4:15 Tall)"`, `"512x1856 (~1:4 Tall)"`, `"512x1792 (2:7 Tall)"`, `"512x1728 (~1:3 Tall)"`, `"512x1664 (4:13 Tall)"`, `"512x1600 (8:25 Tall)"`, `"512x1536 (1:3 Portrait)"`
+
+**Tall Portrait (9:23 to 3:5):**
+`"576x1472 (9:23 Portrait)"`, `"640x1408 (5:11 Portrait)"`, `"704x1344 (11:21 Portrait)"`, `"768x1280 (3:5 Portrait)"`
+
+**Standard Portrait (13:19 to 15:17):**
+`"832x1216 (13:19 Portrait)"`, `"896x1152 (7:9 Portrait)"`, `"960x1088 (15:17 Portrait)"`
 
 **Square:**
 `"1024x1024 (1:1 Square)"`
 
-**Landscapes:**
-`"1088x960 (17:15 Landscape)"`, `"1152x896 (9:7 Landscape)"`, `"1024x832 (16:13 Landscape)"`, `"960x832 (15:13 Landscape)"`, `"1152x768 (3:2 Landscape)"`, `"1088x768 (17:12 Landscape)"`, `"1344x704 (21:11 Landscape)"`, `"1216x704 (19:11 Landscape)"`, `"1536x640 (12:5 Landscape)"`, `"1408x640 (11:5 Landscape)"`, `"1792x576 (28:9 Wide)"`, `"1664x576 (26:9 Wide)"`, `"1920x512 (15:4 Wide)"`, `"2048x512 (4:1 Wide)"`
+**Standard Landscape (17:15 to 19:13):**
+`"1088x960 (17:15 Landscape)"`, `"1152x896 (9:7 Landscape)"`, `"1216x832 (19:13 Landscape)"`
+
+**Wide Landscape (5:3 to 11:5):**
+`"1280x768 (5:3 Landscape)"`, `"1344x704 (21:11 Landscape)"`, `"1408x640 (11:5 Landscape)"`, `"1472x576 (23:9 Landscape)"`
+
+**Extreme Wide (3:1 to 4:1):**
+`"1536x512 (3:1 Wide)"`, `"1600x512 (25:8 Wide)"`, `"1664x512 (13:4 Wide)"`, `"1728x512 (27:8 Wide)"`, `"1792x512 (7:2 Wide)"`, `"1856x512 (29:8 Wide)"`, `"1920x512 (15:4 Wide)"`, `"1984x512 (31:8 Wide)"`, `"2048x512 (4:1 Wide)"`
 
 ### 4.6 Async Requests
 
@@ -488,6 +517,106 @@ All costs are based on [RunPod serverless pricing](https://www.runpod.io/pricing
 
 ---
 
+## Multi-Image Fusion
+
+The model supports combining elements from **up to 3 images** into a single output using the `HunyuanInstructMultiFusion` node. 4-5 images are experimental and require significantly more VRAM.
+
+### Multi-Image Fusion Workflow (API)
+
+```bash
+curl -X POST "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/runsync" \
+  -H "Authorization: Bearer YOUR_RUNPOD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": {
+      "workflow": {
+        "1": {
+          "inputs": {
+            "model_name": "HunyuanImage-3.0-Instruct-Distil-NF4",
+            "force_reload": false,
+            "attention_impl": "sdpa",
+            "moe_impl": "eager",
+            "vram_reserve_gb": 30,
+            "blocks_to_swap": 16
+          },
+          "class_type": "HunyuanInstructLoader",
+          "_meta": { "title": "Hunyuan Instruct Loader" }
+        },
+        "2": {
+          "inputs": { "image": "image1.png", "upload": "image" },
+          "class_type": "LoadImage"
+        },
+        "3": {
+          "inputs": { "image": "image2.png", "upload": "image" },
+          "class_type": "LoadImage"
+        },
+        "4": {
+          "inputs": { "image": "image3.png", "upload": "image" },
+          "class_type": "LoadImage"
+        },
+        "5": {
+          "inputs": {
+            "model": ["1", 0],
+            "image_1": ["2", 0],
+            "image_2": ["3", 0],
+            "image_3": ["4", 0],
+            "instruction": "Place the subject from image 1 into the scene from image 2 with the style of image 3",
+            "bot_task": "image",
+            "seed": -1,
+            "system_prompt": "dynamic",
+            "resolution": "1024x1024 (1:1 Square)",
+            "steps": -1
+          },
+          "class_type": "HunyuanInstructMultiFusion",
+          "_meta": { "title": "Hunyuan Instruct Multi-Image Fusion" }
+        },
+        "6": {
+          "inputs": {
+            "filename_prefix": "ComfyUI",
+            "images": ["5", 0]
+          },
+          "class_type": "SaveImage",
+          "_meta": { "title": "Save Image" }
+        }
+      },
+      "images": [
+        { "name": "image1.png", "image": "<base64 image 1>" },
+        { "name": "image2.png", "image": "<base64 image 2>" },
+        { "name": "image3.png", "image": "<base64 image 3>" }
+      ]
+    }
+  }'
+```
+
+### Multi-Image Fusion Input Names
+
+The fusion node uses numbered inputs: `image_1` (required), `image_2` through `image_5` (optional). Do NOT use `images` or `image` — the node will reject them.
+
+### VRAM Requirements for Multi-Image Fusion
+
+Multi-image fusion uses significantly more VRAM than text-to-image or single-image editing because the MoE dispatch_mask grows O(N²) with token count. More images = more tokens = exponentially more VRAM for the dispatch mask.
+
+| Operation | NF4 blocks_to_swap | NF4 on 96GB GPU | NF4 on 80GB GPU |
+|---|---|---|---|
+| Text-to-image | `0` | Works | Works |
+| Single image edit | `0` | Works | Works |
+| 2-image fusion | `0` | Works | May OOM — try `8` |
+| **3-image fusion** | **`16`** | **Works** | **Likely OOMs even with `16`+** |
+
+> **Critical:** If you change `blocks_to_swap` after the model is already loaded, you **must** set `"force_reload": true` in the loader. The model is cached in memory — changing `blocks_to_swap` without `force_reload` has no effect.
+
+### Bot Task Modes
+
+| Mode | Description | Speed | VRAM |
+|---|---|---|---|
+| `image` | Direct generation — prompt/instruction used as-is | Fastest | Lowest |
+| `recaption` | Model rewrites prompt into detailed description first | Medium | Medium |
+| `think_recaption` | Chain-of-thought reasoning, then rewrite, then generate (best quality) | Slowest | Highest (~28 GB dispatch_mask for NF4 Distil) |
+
+For multi-image fusion, use `bot_task: "image"` to minimize VRAM usage. `think_recaption` with 3 images will almost certainly OOM on any current GPU.
+
+---
+
 ## Troubleshooting
 
 ### OOM (Out of Memory) on 48GB GPUs
@@ -530,6 +659,63 @@ If the endpoint returns a tiny blank PNG and the logs show `Prompt executed in 0
 1. **bitsandbytes assertion error** — check logs for `assert module.weight.shape[1] == 1`. This means PyTorch is too old. The Comfy_HunyuanImage3 node requires `torch>=2.8.0`. The Dockerfile force-upgrades PyTorch — if you see this error, rebuild the image.
 2. **Input image not sent** — if using the image editing workflow, make sure the `images` array contains actual base64 data, not the placeholder string `"<base64 encoded image>"`.
 3. **Resolution format wrong** — the `resolution` field must use the exact format `"1024x1024 (1:1 Square)"`, not bare `"1024x1024"`. See [Resolution Options](#45-resolution-options).
+
+### OOM During Multi-Image Fusion (3 Images)
+
+```
+CUDA Out of Memory during multi-image fusion
+Currently allocated: 57.50 GiB
+Requested: 22.69 GiB
+```
+
+Multi-image fusion uses O(N²) more VRAM than single-image operations due to the MoE dispatch_mask. For 3 images on NF4:
+
+1. Set `"blocks_to_swap": 16` (offloads ~12 GB of model weights to CPU)
+2. **Set `"force_reload": true`** — if the model was already loaded with `blocks_to_swap: 0`, the cached model won't pick up the new setting
+3. Use `"bot_task": "image"` (not `think_recaption` which uses ~28 GB for the dispatch mask alone)
+
+See [Multi-Image Fusion](#multi-image-fusion) for full details.
+
+### blocks_to_swap Has No Effect
+
+If you change `blocks_to_swap` but VRAM usage stays the same, the model is cached from a previous load. Set `"force_reload": true` in the `HunyuanInstructLoader` inputs. This forces a full model reload with the new block swap setting.
+
+### CUDA Error: No Kernel Image Available (Blackwell GPUs)
+
+```
+NVIDIA RTX PRO 6000 Blackwell Server Edition with CUDA capability sm_120 is not compatible
+The current PyTorch install supports CUDA capabilities sm_50 sm_60 sm_70 sm_75 sm_80 sm_86 sm_90
+```
+
+The PyTorch version doesn't include Blackwell (sm_120) kernels. Fix depends on context:
+
+- **Docker image (serverless):** Both NF4 and INT8 targets in `docker-bake.hcl` are already configured with CUDA 12.8 PyTorch which includes Blackwell kernels. Rebuild the image.
+- **GPU Pod (interactive):** Upgrade PyTorch in the venv:
+
+```bash
+/workspace/runpod-slim/ComfyUI/.venv/bin/pip install --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+```
+
+The `setup-pod.sh` script auto-detects Blackwell GPUs and upgrades PyTorch automatically.
+
+### torchvision::nms Operator Does Not Exist (GPU Pod)
+
+```
+RuntimeError: operator torchvision::nms does not exist
+```
+
+This happens when system Python's `torchvision` is loaded instead of the venv's version. Always start ComfyUI with the venv Python:
+
+```bash
+cd /workspace/runpod-slim/ComfyUI
+.venv/bin/python main.py --listen 0.0.0.0 --port 8188
+```
+
+If the venv doesn't have `torchvision` installed:
+
+```bash
+/workspace/runpod-slim/ComfyUI/.venv/bin/pip install torchvision
+```
 
 ### Model Not Found
 
@@ -582,12 +768,17 @@ Open the pod's web terminal or SSH in and paste this entire block.
 **For NF4:**
 
 ```bash
+VENV_PIP=/workspace/runpod-slim/ComfyUI/.venv/bin/pip
+
 # Install Comfy_HunyuanImage3 custom nodes
 cd /workspace/runpod-slim/ComfyUI/custom_nodes
 git clone https://github.com/EricRollei/Comfy_HunyuanImage3
 cd Comfy_HunyuanImage3
-/workspace/runpod-slim/ComfyUI/.venv/bin/pip install -r requirements.txt
-/workspace/runpod-slim/ComfyUI/.venv/bin/pip install "diffusers>=0.31.0" "transformers>=4.47.0,<5.0.0" "bitsandbytes>=0.48.2" "accelerate>=1.2.1" "huggingface_hub[hf_xet]"
+$VENV_PIP install -r requirements.txt
+$VENV_PIP install torchvision "diffusers>=0.31.0" "transformers>=4.47.0,<5.0.0" "bitsandbytes>=0.48.2" "accelerate>=1.2.1" "huggingface_hub[hf_xet]"
+
+# Blackwell GPUs (RTX 6000 Blackwell, etc.) need PyTorch with CUDA 12.8 kernels:
+# $VENV_PIP install --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
 # Download the model (~48 GB, takes 10-30 min)
 python3 -c "
@@ -608,12 +799,17 @@ cd /workspace/runpod-slim/ComfyUI
 **For INT8:**
 
 ```bash
+VENV_PIP=/workspace/runpod-slim/ComfyUI/.venv/bin/pip
+
 # Install Comfy_HunyuanImage3 custom nodes
 cd /workspace/runpod-slim/ComfyUI/custom_nodes
 git clone https://github.com/EricRollei/Comfy_HunyuanImage3
 cd Comfy_HunyuanImage3
-/workspace/runpod-slim/ComfyUI/.venv/bin/pip install -r requirements.txt
-/workspace/runpod-slim/ComfyUI/.venv/bin/pip install "diffusers>=0.31.0" "transformers>=4.47.0,<5.0.0" "bitsandbytes>=0.48.2" "accelerate>=1.2.1" "huggingface_hub[hf_xet]"
+$VENV_PIP install -r requirements.txt
+$VENV_PIP install torchvision "diffusers>=0.31.0" "transformers>=4.47.0,<5.0.0" "bitsandbytes>=0.48.2" "accelerate>=1.2.1" "huggingface_hub[hf_xet]"
+
+# Blackwell GPUs (RTX 6000 Blackwell, etc.) need PyTorch with CUDA 12.8 kernels:
+# $VENV_PIP install --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
 # Download the model (~83 GB, takes 20-60 min)
 python3 -c "
@@ -631,7 +827,11 @@ cd /workspace/runpod-slim/ComfyUI
 .venv/bin/python main.py --listen 0.0.0.0 --port 8188
 ```
 
-> **Important:** Packages must be installed into the `.venv` (using `.venv/bin/pip`), and ComfyUI must be started with `.venv/bin/python`. The system Python has mismatched torchvision that will crash ComfyUI. Also, `transformers` must be pinned to `<5.0.0` -- version 5.x breaks NF4/INT8 model loading.
+> **Important notes for GPU Pod setup:**
+> - All packages must be installed into the `.venv` (using `.venv/bin/pip`), and ComfyUI must be started with `.venv/bin/python`. The system Python has a mismatched `torchvision` that will crash ComfyUI with `operator torchvision::nms does not exist`.
+> - `torchvision` must be explicitly installed into the venv — it's not included by default.
+> - `transformers` must be pinned to `<5.0.0` — version 5.x breaks NF4/INT8 model loading with `"normal_kernel_cuda" not implemented for 'Byte'`.
+> - **Blackwell GPUs** (RTX 6000 Blackwell, sm_120): Uncomment the PyTorch CUDA 12.8 upgrade line. The default PyTorch in the venv only supports up to sm_90 (H100). Without this upgrade, generation fails with `CUDA error: no kernel image is available for execution on the device`.
 
 Total setup time: ~20-40 minutes for NF4, ~40-70 minutes for INT8 (mostly model download). The model download only happens once if you use a persistent volume.
 
@@ -645,17 +845,17 @@ From a second terminal tab on the pod, send a text-to-image request. Replace the
 
 **NF4:**
 ```bash
-curl -X POST http://localhost:8188/prompt -H "Content-Type: application/json" -d '{"prompt":{"1":{"inputs":{"model_name":"HunyuanImage-3.0-Instruct-Distil-NF4","force_reload":false,"attention_impl":"sdpa","moe_impl":"eager","vram_reserve_gb":30,"blocks_to_swap":0},"class_type":"HunyuanInstructLoader"},"2":{"inputs":{"model":["1",0],"prompt":"A golden retriever sitting on a beach at sunset","bot_task":"image","seed":42,"system_prompt":"dynamic","resolution":"1024x1024 (1:1 Square)","steps":-1,"guidance_scale":-1,"flow_shift":2.8,"max_new_tokens":2048,"verbose":0},"class_type":"HunyuanInstructGenerate"},"3":{"inputs":{"images":["2",0]},"class_type":"PreviewImage"}}}'
+curl -X POST http://localhost:8188/prompt -H "Content-Type: application/json" -d '{"prompt":{"1":{"inputs":{"model_name":"HunyuanImage-3.0-Instruct-Distil-NF4","force_reload":false,"attention_impl":"sdpa","moe_impl":"eager","vram_reserve_gb":30,"blocks_to_swap":0},"class_type":"HunyuanInstructLoader"},"2":{"inputs":{"model":["1",0],"prompt":"A golden retriever sitting on a beach at sunset","bot_task":"image","seed":42,"system_prompt":"dynamic","resolution":"1024x1024 (1:1 Square)","steps":-1,"guidance_scale":-1,"flow_shift":2.8,"max_new_tokens":2048,"verbose":0},"class_type":"HunyuanInstructGenerate"},"3":{"inputs":{"filename_prefix":"ComfyUI","images":["2",0]},"class_type":"SaveImage"}}}'
 ```
 
 **INT8:**
 ```bash
-curl -X POST http://localhost:8188/prompt -H "Content-Type: application/json" -d '{"prompt":{"1":{"inputs":{"model_name":"HunyuanImage-3.0-Instruct-Distil-INT8","force_reload":false,"attention_impl":"sdpa","moe_impl":"eager","vram_reserve_gb":30,"blocks_to_swap":0},"class_type":"HunyuanInstructLoader"},"2":{"inputs":{"model":["1",0],"prompt":"A golden retriever sitting on a beach at sunset","bot_task":"image","seed":42,"system_prompt":"dynamic","resolution":"1024x1024 (1:1 Square)","steps":-1,"guidance_scale":-1,"flow_shift":2.8,"max_new_tokens":2048,"verbose":0},"class_type":"HunyuanInstructGenerate"},"3":{"inputs":{"images":["2",0]},"class_type":"PreviewImage"}}}'
+curl -X POST http://localhost:8188/prompt -H "Content-Type: application/json" -d '{"prompt":{"1":{"inputs":{"model_name":"HunyuanImage-3.0-Instruct-Distil-INT8","force_reload":false,"attention_impl":"sdpa","moe_impl":"eager","vram_reserve_gb":30,"blocks_to_swap":0},"class_type":"HunyuanInstructLoader"},"2":{"inputs":{"model":["1",0],"prompt":"A golden retriever sitting on a beach at sunset","bot_task":"image","seed":42,"system_prompt":"dynamic","resolution":"1024x1024 (1:1 Square)","steps":-1,"guidance_scale":-1,"flow_shift":2.8,"max_new_tokens":2048,"verbose":0},"class_type":"HunyuanInstructGenerate"},"3":{"inputs":{"filename_prefix":"ComfyUI","images":["2",0]},"class_type":"SaveImage"}}}'
 ```
 
 > For INT8 on 80GB GPUs, set `"blocks_to_swap": 4` (or up to 8) to offload transformer blocks to CPU.
 
-Watch the first terminal for model loading and diffusion progress. The generated image will appear in the web UI's preview node.
+Watch the first terminal for model loading and diffusion progress. The generated image will be saved to the `output/` folder and visible in the web UI.
 
 ### Stop the Pod When Done
 
