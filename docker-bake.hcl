@@ -159,11 +159,11 @@ target "hunyuan-instruct-nf4" {
   dockerfile = "Dockerfile"
   target = "final"
   args = {
-    BASE_IMAGE = "${BASE_IMAGE}"
+    BASE_IMAGE = "nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04"
     COMFYUI_VERSION = "${COMFYUI_VERSION}"
-    CUDA_VERSION_FOR_COMFY = "${CUDA_VERSION_FOR_COMFY}"
-    ENABLE_PYTORCH_UPGRADE = "${ENABLE_PYTORCH_UPGRADE}"
-    PYTORCH_INDEX_URL = "${PYTORCH_INDEX_URL}"
+    CUDA_VERSION_FOR_COMFY = ""
+    ENABLE_PYTORCH_UPGRADE = "true"
+    PYTORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
     MODEL_TYPE = "hunyuan-instruct-nf4"
   }
   tags = ["${DOCKERHUB_REPO}/${DOCKERHUB_IMG}:${RELEASE_VERSION}-hunyuan-instruct-nf4"]
@@ -175,11 +175,11 @@ target "hunyuan-instruct-int8" {
   dockerfile = "Dockerfile"
   target = "final"
   args = {
-    BASE_IMAGE = "${BASE_IMAGE}"
+    BASE_IMAGE = "nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04"
     COMFYUI_VERSION = "${COMFYUI_VERSION}"
-    CUDA_VERSION_FOR_COMFY = "${CUDA_VERSION_FOR_COMFY}"
-    ENABLE_PYTORCH_UPGRADE = "${ENABLE_PYTORCH_UPGRADE}"
-    PYTORCH_INDEX_URL = "${PYTORCH_INDEX_URL}"
+    CUDA_VERSION_FOR_COMFY = ""
+    ENABLE_PYTORCH_UPGRADE = "true"
+    PYTORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
     MODEL_TYPE = "hunyuan-instruct-int8"
   }
   tags = ["${DOCKERHUB_REPO}/${DOCKERHUB_IMG}:${RELEASE_VERSION}-hunyuan-instruct-int8"]

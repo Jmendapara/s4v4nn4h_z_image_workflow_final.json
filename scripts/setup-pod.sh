@@ -60,6 +60,17 @@ else
     echo "[1/5] ComfyUI installed."
 fi
 
+# Detect venv — RunPod ComfyUI template creates one at .venv.
+# All pip installs and the final python launch must use the venv
+# to avoid torch/torchvision version mismatches with system packages.
+if [ -x "${COMFYUI_DIR}/.venv/bin/pip" ]; then
+    PIP="${COMFYUI_DIR}/.venv/bin/pip"
+    PYTHON="${COMFYUI_DIR}/.venv/bin/python"
+else
+    PIP="pip"
+    PYTHON="python3"
+fi
+
 # ---- Step 2: Install Comfy_HunyuanImage3 custom nodes ----
 CUSTOM_NODES_DIR="${COMFYUI_DIR}/custom_nodes/Comfy_HunyuanImage3"
 if [ -d "${CUSTOM_NODES_DIR}" ]; then
@@ -71,11 +82,30 @@ else
 fi
 
 echo "[2/5] Installing node requirements..."
-pip install -r "${CUSTOM_NODES_DIR}/requirements.txt"
+$PIP install -r "${CUSTOM_NODES_DIR}/requirements.txt"
 
 # ---- Step 3: Ensure correct dependency versions ----
+# Detect GPU compute capability. Blackwell (sm_120+) needs PyTorch built
+# for CUDA 12.8+ which includes sm_120 kernels.
+GPU_CC=$($PYTHON -c "
+import torch
+if torch.cuda.is_available():
+    cc = torch.cuda.get_device_capability(0)
+    print(f'{cc[0]}{cc[1]}')
+else:
+    print('0')
+" 2>/dev/null || echo "0")
+
+if [ "${GPU_CC}" -ge 120 ] 2>/dev/null; then
+    echo "[3/5] Blackwell GPU detected (sm_${GPU_CC}). Upgrading PyTorch for CUDA 12.8..."
+    $PIP install --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+else
+    echo "[3/5] Ensuring torch + torchvision are installed together in the venv..."
+    $PIP install torchvision
+fi
+
 echo "[3/5] Upgrading key dependencies..."
-pip install \
+$PIP install \
     "diffusers>=0.31.0" \
     "transformers>=4.47.0,<5.0.0" \
     "bitsandbytes>=0.48.2" \
@@ -88,7 +118,7 @@ if [ -d "${MODEL_DIR}" ] && [ "$(ls -A "${MODEL_DIR}" 2>/dev/null)" ]; then
 else
     echo "[4/5] Downloading ${HF_REPO} (${MODEL_SIZE})..."
     echo "       This will take 10-30 minutes depending on bandwidth."
-    python3 -c "
+    $PYTHON -c "
 from huggingface_hub import snapshot_download
 snapshot_download(
     '${HF_REPO}',
@@ -110,9 +140,11 @@ echo ""
 echo "============================================="
 echo " Setup Complete — Package Versions"
 echo "============================================="
-python3 -c "
+$PYTHON -c "
 import torch, bitsandbytes, transformers, diffusers, accelerate
+print(f'  Python:         {__import__(\"sys\").executable}')
 print(f'  PyTorch:        {torch.__version__}')
+print(f'  torchvision:    {__import__(\"torchvision\").__version__}')
 print(f'  CUDA available: {torch.cuda.is_available()}')
 if torch.cuda.is_available():
     print(f'  GPU:            {torch.cuda.get_device_name(0)}')
@@ -125,6 +157,7 @@ print(f'  accelerate:     {accelerate.__version__}')
 echo "============================================="
 echo ""
 echo " Starting ComfyUI on port 8188..."
+echo " Using: ${PYTHON}"
 echo " Open the RunPod Connect button and click"
 echo " the HTTP 8188 link to access the web UI."
 echo ""
@@ -134,4 +167,5 @@ echo ""
 echo "============================================="
 
 cd "${COMFYUI_DIR}"
-python main.py --listen 0.0.0.0 --port 8188
+pkill -f "main.py" 2>/dev/null; sleep 2
+$PYTHON main.py --listen 0.0.0.0 --port 8188
