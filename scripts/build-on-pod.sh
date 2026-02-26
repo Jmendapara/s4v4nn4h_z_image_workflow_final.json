@@ -15,7 +15,7 @@ set -euo pipefail
 # Prerequisites:
 #   - A RunPod GPU pod with the "RunPod Pytorch" template (or any template
 #     that has Docker pre-installed, or use a Docker-in-Docker template).
-#   - At least 240 GB disk for hunyuan-instruct-nf4, 400 GB for hunyuan-instruct-int8, 80 GB for base.
+#   - At least 240 GB disk for hunyuan-instruct-nf4, 500 GB for hunyuan-instruct-int8, 80 GB for base.
 #   - Git and internet access (default on RunPod pods).
 # =============================================================================
 
@@ -82,6 +82,7 @@ echo "       MODEL_TYPE=${MODEL_TYPE}, target=final"
 BUILD_ARGS=(
     --platform linux/amd64
     --target final
+    --no-cache
     --build-arg "MODEL_TYPE=${MODEL_TYPE}"
     --build-arg "COMFYUI_VERSION=${COMFYUI_VERSION}"
 )
@@ -102,6 +103,11 @@ esac
 if [ -n "${HUGGINGFACE_ACCESS_TOKEN}" ]; then
     BUILD_ARGS+=(--build-arg "HUGGINGFACE_ACCESS_TOKEN=${HUGGINGFACE_ACCESS_TOKEN}")
 fi
+
+# Free disk: remove old images, containers, and build cache before building
+docker system prune -af --volumes 2>/dev/null || true
+docker builder prune -af 2>/dev/null || true
+echo "       Available disk: $(df -h /var/lib/docker 2>/dev/null | tail -1 | awk '{print $4}') free"
 
 DOCKER_BUILDKIT=1 docker build "${BUILD_ARGS[@]}" -t "${IMAGE_TAG}" .
 
