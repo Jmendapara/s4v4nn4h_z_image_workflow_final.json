@@ -58,12 +58,12 @@ RUN if [ -n "${CUDA_VERSION_FOR_COMFY}" ]; then \
       /usr/bin/yes | comfy --workspace /comfyui install --version "${COMFYUI_VERSION}" --nvidia; \
     fi && \
     if [ "$ENABLE_PYTORCH_UPGRADE" = "true" ] && [ -n "${PYTORCH_VERSION}" ]; then \
-      uv pip install --force-reinstall torch==${PYTORCH_VERSION} torchvision torchaudio --index-url ${PYTORCH_INDEX_URL} && \
-      uv cache clean; \
+      uv pip install --force-reinstall torch==${PYTORCH_VERSION} torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}; \
     elif [ "$ENABLE_PYTORCH_UPGRADE" = "true" ]; then \
-      uv pip install --force-reinstall torch torchvision torchaudio --index-url ${PYTORCH_INDEX_URL} && \
-      uv cache clean; \
-    fi
+      uv pip install --force-reinstall torch torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}; \
+    fi && \
+    rm -rf /root/.cache/pip /root/.cache/uv /root/.cache/comfy-cli /tmp/* && \
+    uv cache clean
 
 # Change working directory to ComfyUI
 WORKDIR /comfyui
@@ -90,15 +90,13 @@ ENV PIP_NO_INPUT=1
 
 # Install Comfy_HunyuanImage3 custom nodes (git clone + requirements.txt)
 WORKDIR /comfyui
-RUN comfy-node-install https://github.com/EricRollei/Comfy_HunyuanImage3
-
-# Pin dependency versions for HunyuanImage3. transformers 5.x breaks NF4/INT8
-# model loading (tries to reinitialize quantized weights with .normal_()).
-RUN uv pip install \
+RUN comfy-node-install https://github.com/EricRollei/Comfy_HunyuanImage3 && \
+    uv pip install \
     "diffusers>=0.31.0" \
     "transformers>=4.47.0,<5.0.0" \
     "bitsandbytes>=0.48.2" \
     "accelerate>=1.2.1" && \
+    rm -rf /root/.cache/pip /root/.cache/uv /tmp/* && \
     uv cache clean
 
 # Guarantee that the network-volume path is in the search list even if
