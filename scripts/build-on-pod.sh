@@ -91,7 +91,7 @@ BUILD_ARGS=(
 # Default: CUDA 12.6 (works with RunPod driver >= 560.x, proven stable).
 # Override: set CUDA_LEVEL=12.8 for Blackwell GPUs (sm_120, needs driver >= 570.x).
 CUDA_LEVEL="${CUDA_LEVEL:-12.6}"
-PYTORCH_VERSION="${PYTORCH_VERSION:-2.7.1}"
+PYTORCH_VERSION="${PYTORCH_VERSION:-}"
 
 case "${MODEL_TYPE}" in
     hunyuan-instruct-nf4|hunyuan-instruct-int8)
@@ -103,7 +103,7 @@ case "${MODEL_TYPE}" in
                 --build-arg "PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu128"
                 --build-arg "PYTORCH_VERSION=${PYTORCH_VERSION}"
             )
-            echo "       Using CUDA 12.8 base + PyTorch ${PYTORCH_VERSION}+cu128 (Blackwell, needs driver >= 570)"
+            echo "       Using CUDA 12.8 base + PyTorch ${PYTORCH_VERSION:-latest}+cu128 (Blackwell, needs driver >= 570)"
         else
             BUILD_ARGS+=(
                 --build-arg "BASE_IMAGE=nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04"
@@ -112,7 +112,7 @@ case "${MODEL_TYPE}" in
                 --build-arg "PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu126"
                 --build-arg "PYTORCH_VERSION=${PYTORCH_VERSION}"
             )
-            echo "       Using CUDA 12.6 base + PyTorch ${PYTORCH_VERSION}+cu126 (default, works with driver >= 560)"
+            echo "       Using CUDA 12.6 base + PyTorch ${PYTORCH_VERSION:-latest}+cu126 (default, works with driver >= 560)"
         fi
         ;;
 esac
