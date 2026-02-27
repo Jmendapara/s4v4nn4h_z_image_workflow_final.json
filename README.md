@@ -72,11 +72,11 @@ Use a cheap VPS from [Hetzner Cloud](https://console.hetzner.cloud/) or any prov
 |---|---|---|
 | Provider | Hetzner Cloud (or any VPS) | Hetzner Cloud (or any VPS) |
 | OS | Ubuntu 24.04 | Ubuntu 24.04 |
-| Server type | CPX51 (8 vCPU, 16 GB RAM, 240 GB disk) | Dedicated or volume-mounted (400 GB+ disk) |
-| Disk | 240 GB minimum | 400 GB minimum |
+| Server type | CPX51 (8 vCPU, 16 GB RAM, 240 GB disk) | Dedicated or volume-mounted (300 GB+ disk) |
+| Disk | 240 GB minimum | 300 GB minimum |
 | Estimated cost | ~$0.04/hour | ~$0.08/hour |
 
-> **Important:** Docker needs space for intermediate build layers in addition to the final image. The INT8 model is ~83 GB on disk, so you need significantly more space than for NF4.
+> **Important:** Docker needs space for intermediate build layers in addition to the final image. The INT8 model is ~83 GB on disk, so you need more space than for NF4. Models are downloaded directly in the final stage (no multi-stage COPY) to avoid doubling disk usage.
 
 ### 1.2 SSH into the Server
 

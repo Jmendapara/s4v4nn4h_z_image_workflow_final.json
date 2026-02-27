@@ -109,20 +109,17 @@ RUN chmod +x /usr/local/bin/comfy-manager-set-mode
 # Set the default command to run when starting the container
 CMD ["/start.sh"]
 
-# Stage 2: Download models
-FROM base AS downloader
+# Stage 2: Final image — download models directly (avoids COPY duplication
+# that doubles disk usage during build for large models like INT8 ~83 GB).
+FROM base AS final
 
 ARG HUGGINGFACE_ACCESS_TOKEN
-# Set default model type if none is provided
 ARG MODEL_TYPE=hunyuan-instruct-nf4
 
-# Change working directory to ComfyUI
 WORKDIR /comfyui
 
-# Create necessary directories upfront
 RUN mkdir -p models/checkpoints models/vae models/unet models/clip models/text_encoders models/diffusion_models models/model_patches
 
-# Download checkpoints/vae/unet/clip models to include in image based on model type
 RUN if [ "$MODEL_TYPE" = "sdxl" ]; then \
       wget -q -O models/checkpoints/sd_xl_base_1.0.safetensors https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors && \
       wget -q -O models/vae/sdxl_vae.safetensors https://huggingface.co/stabilityai/sdxl-vae/resolve/main/sdxl_vae.safetensors && \
@@ -168,13 +165,6 @@ RUN if [ "$MODEL_TYPE" = "hunyuan-instruct-int8" ]; then \
       python3 -c "from huggingface_hub import snapshot_download; snapshot_download('EricRollei/HunyuanImage-3.0-Instruct-Distil-INT8-v2', local_dir='/comfyui/models/HunyuanImage-3.0-Instruct-Distil-INT8')"; \
     fi
 
-# Stage 3: Final image
-FROM base AS final
-
-# Copy models from stage 2 to the final image
-COPY --from=downloader /comfyui/models /comfyui/models
-
-# Re-create symlink aliases in the final image (avoids COPY resolving them and duplicating data)
 RUN if [ -d /comfyui/models/HunyuanImage-3.0-Instruct-Distil-NF4 ]; then \
       ln -s HunyuanImage-3.0-Instruct-Distil-NF4 /comfyui/models/HunyuanImage-3.0-Instruct-Distil-NF4-v2; \
     fi && \
