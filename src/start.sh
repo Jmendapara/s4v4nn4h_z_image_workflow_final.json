@@ -48,6 +48,18 @@ fi
 echo "worker-comfyui: /comfyui/models/ listing:"
 ls -la /comfyui/models/ 2>/dev/null || echo "  (empty or missing)"
 
+# ---------- Pre-launch diagnostics ----------
+echo "worker-comfyui: System info before launch:"
+echo "  GPU(s):"
+nvidia-smi --query-gpu=gpu_name,memory.total,driver_version,compute_cap --format=csv,noheader 2>/dev/null \
+    || echo "  (nvidia-smi not available)"
+echo "  CUDA runtime version:"
+python -c "import torch; print(f'  PyTorch {torch.__version__}, CUDA {torch.version.cuda}')" 2>/dev/null \
+    || echo "  (torch not importable)"
+echo "  System RAM:"
+free -h 2>/dev/null | head -2 || echo "  (free not available)"
+echo ""
+
 echo "worker-comfyui: Starting ComfyUI"
 
 # Allow operators to tweak verbosity; default is DEBUG.
@@ -56,14 +68,22 @@ echo "worker-comfyui: Starting ComfyUI"
 # Serve the API and don't shutdown the container
 EXTRA_PATHS="--extra-model-paths-config /comfyui/extra_model_paths.yaml"
 
-if [ "$SERVE_API_LOCALLY" == "true" ]; then
-    python -u /comfyui/main.py --disable-auto-launch --disable-metadata --listen ${EXTRA_PATHS} --verbose "${COMFY_LOG_LEVEL}" --log-stdout &
+COMFY_LOG="/var/log/comfyui.log"
 
+# Launch ComfyUI with output teed to a log file so crash messages survive.
+# The handler reads this log when ComfyUI dies unexpectedly.
+if [ "$SERVE_API_LOCALLY" == "true" ]; then
+    python -u /comfyui/main.py --disable-auto-launch --disable-metadata --listen ${EXTRA_PATHS} --verbose "${COMFY_LOG_LEVEL}" --log-stdout 2>&1 | tee "${COMFY_LOG}" &
+    COMFY_PID=$!
+
+    echo "worker-comfyui: ComfyUI PID=${COMFY_PID}, log=${COMFY_LOG}"
     echo "worker-comfyui: Starting RunPod Handler"
     python -u /handler.py --rp_serve_api --rp_api_host=0.0.0.0
 else
-    python -u /comfyui/main.py --disable-auto-launch --disable-metadata ${EXTRA_PATHS} --verbose "${COMFY_LOG_LEVEL}" --log-stdout &
+    python -u /comfyui/main.py --disable-auto-launch --disable-metadata ${EXTRA_PATHS} --verbose "${COMFY_LOG_LEVEL}" --log-stdout 2>&1 | tee "${COMFY_LOG}" &
+    COMFY_PID=$!
 
+    echo "worker-comfyui: ComfyUI PID=${COMFY_PID}, log=${COMFY_LOG}"
     echo "worker-comfyui: Starting RunPod Handler"
     python -u /handler.py
 fi

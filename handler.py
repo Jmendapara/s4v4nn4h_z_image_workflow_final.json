@@ -133,6 +133,19 @@ def _collect_crash_diagnostics():
     except Exception as e:
         diag["free_error"] = str(e)
 
+    # Tail of ComfyUI log file (captures the actual crash output)
+    comfy_log = "/var/log/comfyui.log"
+    try:
+        if os.path.exists(comfy_log):
+            result = subprocess.run(
+                ["tail", "-n", "50", comfy_log],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.stdout.strip():
+                diag["comfyui_log_tail"] = result.stdout.strip()
+    except Exception as e:
+        diag["comfyui_log_error"] = str(e)
+
     return diag
 
 
