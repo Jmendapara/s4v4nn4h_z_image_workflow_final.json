@@ -56,6 +56,17 @@ nvidia-smi --query-gpu=gpu_name,memory.total,driver_version,compute_cap --format
 echo "  CUDA runtime version:"
 python -c "import torch; print(f'  PyTorch {torch.__version__}, CUDA {torch.version.cuda}')" 2>/dev/null \
     || echo "  (torch not importable)"
+echo "  Key package versions:"
+python -c "
+import importlib, sys
+for pkg in ['torch', 'bitsandbytes', 'diffusers', 'transformers', 'accelerate', 'comfy_api']:
+    try:
+        m = importlib.import_module(pkg)
+        v = getattr(m, '__version__', '?')
+        print(f'    {pkg}=={v}')
+    except ImportError:
+        print(f'    {pkg}: not installed')
+" 2>/dev/null || echo "  (could not list packages)"
 echo "  System RAM:"
 free -h 2>/dev/null | head -2 || echo "  (free not available)"
 echo ""
