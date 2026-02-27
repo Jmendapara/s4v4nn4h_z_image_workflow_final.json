@@ -98,7 +98,6 @@ case "${MODEL_TYPE}" in
         if [ "${CUDA_LEVEL}" = "12.8" ]; then
             BUILD_ARGS+=(
                 --build-arg "BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04"
-                --build-arg "CUDA_VERSION_FOR_COMFY=12.8"
                 --build-arg "ENABLE_PYTORCH_UPGRADE=true"
                 --build-arg "PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu128"
                 --build-arg "PYTORCH_VERSION=${PYTORCH_VERSION}"
