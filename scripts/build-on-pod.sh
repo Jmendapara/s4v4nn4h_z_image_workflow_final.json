@@ -87,16 +87,26 @@ BUILD_ARGS=(
     --build-arg "COMFYUI_VERSION=${COMFYUI_VERSION}"
 )
 
-# Hunyuan models need CUDA 12.8 PyTorch for Blackwell GPU (sm_120) support.
-# This also works on older GPUs (A100 sm_80, H100 sm_90).
+# CUDA version selection for Hunyuan models.
+# Default: CUDA 12.6 (works with RunPod driver >= 560.x, proven stable).
+# Override: set CUDA_LEVEL=12.8 for Blackwell GPUs (sm_120, needs driver >= 570.x).
+CUDA_LEVEL="${CUDA_LEVEL:-12.6}"
+
 case "${MODEL_TYPE}" in
     hunyuan-instruct-nf4|hunyuan-instruct-int8)
-        BUILD_ARGS+=(
-            --build-arg "BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04"
-            --build-arg "ENABLE_PYTORCH_UPGRADE=true"
-            --build-arg "PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu128"
-        )
-        echo "       Using CUDA 12.8 base + PyTorch upgrade (Blackwell compatible)"
+        if [ "${CUDA_LEVEL}" = "12.8" ]; then
+            BUILD_ARGS+=(
+                --build-arg "BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04"
+                --build-arg "ENABLE_PYTORCH_UPGRADE=true"
+                --build-arg "PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu128"
+            )
+            echo "       Using CUDA 12.8 base + PyTorch cu128 (Blackwell, needs driver >= 570)"
+        else
+            BUILD_ARGS+=(
+                --build-arg "BASE_IMAGE=nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04"
+            )
+            echo "       Using CUDA 12.6 base (default, works with driver >= 560)"
+        fi
         ;;
 esac
 
