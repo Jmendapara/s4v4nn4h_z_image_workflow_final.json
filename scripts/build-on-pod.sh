@@ -119,7 +119,18 @@ docker system prune -af --volumes 2>/dev/null || true
 docker builder prune -af 2>/dev/null || true
 echo "       Available disk: $(df -h /var/lib/docker 2>/dev/null | tail -1 | awk '{print $4}') free"
 
-DOCKER_BUILDKIT=1 docker build "${BUILD_ARGS[@]}" -t "${IMAGE_TAG}" .
+# Use the docker-container buildx driver for large images (INT8 ~83GB).
+# The default "docker" driver uses the local containerd snapshotter which can
+# fail with "Lchown ... no such file or directory" on images >50GB.
+BUILDER_NAME="large-image-builder"
+if ! docker buildx inspect "${BUILDER_NAME}" &>/dev/null; then
+    echo "       Creating buildx builder '${BUILDER_NAME}' (docker-container driver)..."
+    docker buildx create --name "${BUILDER_NAME}" --driver docker-container --use
+else
+    docker buildx use "${BUILDER_NAME}"
+fi
+
+docker buildx build "${BUILD_ARGS[@]}" --load -t "${IMAGE_TAG}" .
 
 echo "[4/5] Build complete!"
 echo "       Image size: $(docker images "${IMAGE_TAG}" --format '{{.Size}}')"
