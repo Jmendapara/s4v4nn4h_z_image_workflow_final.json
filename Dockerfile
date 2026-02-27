@@ -49,16 +49,16 @@ ENV PATH="/opt/venv/bin:${PATH}"
 # Install comfy-cli + dependencies needed by it to install ComfyUI
 RUN uv pip install comfy-cli pip setuptools wheel
 
-# Install ComfyUI
+# Install ComfyUI, then pin PyTorch to the correct CUDA version in the same
+# layer so the cu128 wheels comfy-cli pulls don't bloat the image.
 RUN if [ -n "${CUDA_VERSION_FOR_COMFY}" ]; then \
       /usr/bin/yes | comfy --workspace /comfyui install --version "${COMFYUI_VERSION}" --cuda-version "${CUDA_VERSION_FOR_COMFY}" --nvidia; \
     else \
       /usr/bin/yes | comfy --workspace /comfyui install --version "${COMFYUI_VERSION}" --nvidia; \
-    fi
-
-# Upgrade PyTorch if needed (for newer CUDA versions)
-RUN if [ "$ENABLE_PYTORCH_UPGRADE" = "true" ]; then \
-      uv pip install --force-reinstall torch torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}; \
+    fi && \
+    if [ "$ENABLE_PYTORCH_UPGRADE" = "true" ]; then \
+      uv pip install --force-reinstall torch torchvision torchaudio --index-url ${PYTORCH_INDEX_URL} && \
+      uv cache clean; \
     fi
 
 # Change working directory to ComfyUI
