@@ -106,8 +106,10 @@ case "${MODEL_TYPE}" in
             BUILD_ARGS+=(
                 --build-arg "BASE_IMAGE=nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04"
                 --build-arg "CUDA_VERSION_FOR_COMFY=12.6"
+                --build-arg "ENABLE_PYTORCH_UPGRADE=true"
+                --build-arg "PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu126"
             )
-            echo "       Using CUDA 12.6 base (default, works with driver >= 560)"
+            echo "       Using CUDA 12.6 base + PyTorch cu126 (default, works with driver >= 560)"
         fi
         ;;
 esac

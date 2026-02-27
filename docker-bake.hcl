@@ -24,11 +24,11 @@ variable "CUDA_VERSION_FOR_COMFY" {
 }
 
 variable "ENABLE_PYTORCH_UPGRADE" {
-  default = "false"
+  default = "true"
 }
 
 variable "PYTORCH_INDEX_URL" {
-  default = ""
+  default = "https://download.pytorch.org/whl/cu126"
 }
 
 variable "HUGGINGFACE_ACCESS_TOKEN" {
