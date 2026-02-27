@@ -92,7 +92,7 @@ def _collect_crash_diagnostics():
     # Check dmesg for recent OOM kills
     try:
         result = subprocess.run(
-            ["dmesg", "--time-format=reltime", "-T"],
+            ["dmesg", "-T"],
             capture_output=True, text=True, timeout=5,
         )
         oom_lines = [
