@@ -110,13 +110,28 @@ export IMAGE_TAG="your-dockerhub-username/worker-comfyui:latest-hunyuan-instruct
 export MODEL_TYPE="hunyuan-instruct-int8"
 ```
 
-### 1.5 Run the Build Script
+### 1.5 (Optional) Select CUDA Level for Blackwell GPUs
+
+The build defaults to **CUDA 12.6** (cu126), which works with A100, H100, A6000, L40S, and most current GPUs (driver >= 560.x). If you are targeting **Blackwell GPUs** (RTX 5090, B200, etc.) that require CUDA 12.8, set this before running the build script:
 
 ```bash
-cd /tmp && curl -fsSL https://raw.githubusercontent.com/Jmendapara/s4v4nn4h_z_image_workflow_final.json/main/scripts/build-on-pod.sh | bash
+export CUDA_LEVEL=12.8
+```
+
+| `CUDA_LEVEL` | Base Image | PyTorch Wheels | Driver Needed | GPUs |
+|---|---|---|---|---|
+| `12.6` (default) | `cuda:12.6.3` | `cu126` | >= 560.x | A100, H100, A6000, L40S, etc. |
+| `12.8` | `cuda:12.8.1` | `cu128` | >= 570.x | RTX 5090 / Blackwell only |
+
+### 1.6 Run the Build Script
+
+```bash
+cd /tmp && curl -fsSL "https://raw.githubusercontent.com/Jmendapara/s4v4nn4h_z_image_workflow_final.json/main/scripts/build-on-pod.sh?ts=$(date +%s)" | bash
 ```
 
 > **Note:** Always run from `/tmp` (or any directory outside the build workspace). The script deletes and re-creates `/tmp/build-workspace`, which fails if your shell is currently inside that directory.
+>
+> The `?ts=$(date +%s)` query parameter busts GitHub's raw content CDN cache so you always get the latest version of the script.
 
 This script:
 1. Installs Docker if needed
@@ -127,7 +142,7 @@ This script:
 
 Expect **60–90 minutes** for NF4 or **90–150 minutes** for INT8 (larger model download and push). The Docker image export step alone can take 30–40 minutes for NF4 due to the ~119 GB image size.
 
-### 1.6 Delete the Server
+### 1.7 Delete the Server
 
 Once the push completes, **delete the server immediately** to stop charges.
 
