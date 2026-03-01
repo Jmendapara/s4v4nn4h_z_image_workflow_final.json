@@ -7,8 +7,8 @@
           "force_reload": true,
           "attention_impl": "sdpa",
           "moe_impl": "eager",
-          "vram_reserve_gb": 30,
-          "blocks_to_swap": 16
+          "vram_reserve_gb": 20,
+          "blocks_to_swap": 24
         },
         "class_type": "HunyuanInstructLoader",
         "_meta": {
@@ -55,7 +55,7 @@
           "bot_task": "image",
           "seed": -1,
           "system_prompt": "dynamic",
-          "resolution": "1024x1024 (1:1 Square)",
+          "resolution": "768x1280 (3:5 Portrait)",
           "steps": -1
         },
         "class_type": "HunyuanInstructMultiFusion",

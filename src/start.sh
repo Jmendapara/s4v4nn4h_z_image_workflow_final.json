@@ -73,28 +73,60 @@ echo ""
 
 echo "worker-comfyui: Starting ComfyUI"
 
-# Allow operators to tweak verbosity; default is DEBUG.
 : "${COMFY_LOG_LEVEL:=DEBUG}"
 
-# Serve the API and don't shutdown the container
 EXTRA_PATHS="--extra-model-paths-config /comfyui/extra_model_paths.yaml"
-
 COMFY_LOG="/var/log/comfyui.log"
 
-# Launch ComfyUI with output teed to a log file so crash messages survive.
-# The handler reads this log when ComfyUI dies unexpectedly.
+COMFY_CMD="python -u /comfyui/main.py --disable-auto-launch --disable-metadata ${EXTRA_PATHS} --verbose ${COMFY_LOG_LEVEL} --log-stdout"
 if [ "$SERVE_API_LOCALLY" == "true" ]; then
-    python -u /comfyui/main.py --disable-auto-launch --disable-metadata --listen ${EXTRA_PATHS} --verbose "${COMFY_LOG_LEVEL}" --log-stdout 2>&1 | tee "${COMFY_LOG}" &
-    COMFY_PID=$!
+    COMFY_CMD="${COMFY_CMD} --listen"
+fi
 
-    echo "worker-comfyui: ComfyUI PID=${COMFY_PID}, log=${COMFY_LOG}"
-    echo "worker-comfyui: Starting RunPod Handler"
+# Automatic restart settings (override via environment variables)
+: "${COMFY_RESTART_DELAY:=5}"
+: "${COMFY_MAX_RAPID_RESTARTS:=5}"
+: "${COMFY_RAPID_RESTART_WINDOW:=60}"
+
+comfyui_restart_loop() {
+    set -o pipefail
+    local rapid_count=0
+    local window_start
+    window_start=$(date +%s)
+
+    while true; do
+        echo "worker-comfyui: Launching ComfyUI process..."
+        ${COMFY_CMD} 2>&1 | tee "${COMFY_LOG}"
+        local exit_code=$?
+
+        echo "worker-comfyui: ComfyUI exited with code ${exit_code}"
+
+        local now
+        now=$(date +%s)
+        if (( now - window_start < COMFY_RAPID_RESTART_WINDOW )); then
+            rapid_count=$((rapid_count + 1))
+        else
+            rapid_count=1
+            window_start=$now
+        fi
+
+        if (( rapid_count >= COMFY_MAX_RAPID_RESTARTS )); then
+            echo "worker-comfyui: FATAL — ComfyUI crashed ${rapid_count} times within ${COMFY_RAPID_RESTART_WINDOW}s, not restarting."
+            return 1
+        fi
+
+        echo "worker-comfyui: Restarting ComfyUI in ${COMFY_RESTART_DELAY}s (crash ${rapid_count}/${COMFY_MAX_RAPID_RESTARTS} in window)..."
+        sleep "${COMFY_RESTART_DELAY}"
+    done
+}
+
+comfyui_restart_loop &
+COMFY_LOOP_PID=$!
+echo "worker-comfyui: ComfyUI restart loop PID=${COMFY_LOOP_PID}, log=${COMFY_LOG}"
+
+echo "worker-comfyui: Starting RunPod Handler"
+if [ "$SERVE_API_LOCALLY" == "true" ]; then
     python -u /handler.py --rp_serve_api --rp_api_host=0.0.0.0
 else
-    python -u /comfyui/main.py --disable-auto-launch --disable-metadata ${EXTRA_PATHS} --verbose "${COMFY_LOG_LEVEL}" --log-stdout 2>&1 | tee "${COMFY_LOG}" &
-    COMFY_PID=$!
-
-    echo "worker-comfyui: ComfyUI PID=${COMFY_PID}, log=${COMFY_LOG}"
-    echo "worker-comfyui: Starting RunPod Handler"
     python -u /handler.py
 fi

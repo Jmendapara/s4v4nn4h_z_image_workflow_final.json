@@ -37,7 +37,7 @@ The model is baked directly into the Docker image. No network volume is required
 | Diffusion Steps | 8 (CFG-distilled) | 8 (CFG-distilled) |
 | Capabilities | Text-to-image, image editing, multi-image fusion | Text-to-image, image editing, multi-image fusion |
 | On-disk Size | ~48 GB | ~83 GB |
-| Docker Image Size | ~55 GB | ~90 GB |
+| Docker Image Size | ~119 GB | ~155 GB (estimated) |
 | VRAM Required | ~41–49 GB | ~92–100 GB |
 | Recommended GPU | A100 80GB | RTX 6000 Blackwell 96GB / H100 80GB (with block swap) |
 | `MODEL_TYPE` env | `hunyuan-instruct-nf4` | `hunyuan-instruct-int8` |
@@ -54,9 +54,10 @@ Both Docker images are built with CUDA 12.8 PyTorch, supporting A100 (sm_80), H1
 | | A100 80GB | H100 80GB | RTX 6000 Blackwell 96GB |
 |---|---|---|---|
 | **NF4 text-to-image / edit** | Works (`blocks_to_swap: 0`) | Works | Works |
-| **NF4 3-image fusion** | Likely OOMs | Likely OOMs | Works (`blocks_to_swap: 16`) |
+| **NF4 3-image fusion (1024x1024)** | Likely OOMs | Likely OOMs | Tight — may OOM even with `blocks_to_swap: 16`. Try `768x768` or `blocks_to_swap: 24`+ |
+| **NF4 3-image fusion (768x768)** | Likely OOMs | Likely OOMs | Works (`blocks_to_swap: 16`) |
 | **INT8 text-to-image / edit** | `blocks_to_swap: 4-8` | `blocks_to_swap: 4-8` | Works (`blocks_to_swap: 0`) |
-| **INT8 3-image fusion** | Likely OOMs | Likely OOMs | `blocks_to_swap: 16`+ |
+| **INT8 3-image fusion** | Likely OOMs | Likely OOMs | `blocks_to_swap: 24`+ |
 
 ---
 
@@ -72,11 +73,11 @@ Use a cheap VPS from [Hetzner Cloud](https://console.hetzner.cloud/) or any prov
 |---|---|---|
 | Provider | Hetzner Cloud (or any VPS) | Hetzner Cloud (or any VPS) |
 | OS | Ubuntu 24.04 | Ubuntu 24.04 |
-| Server type | CPX51 (8 vCPU, 16 GB RAM, 240 GB disk) | Dedicated or volume-mounted (300 GB+ disk) |
-| Disk | 240 GB minimum | 300 GB minimum |
+| Server type | CPX51 (8 vCPU, 16 GB RAM, 240 GB disk) or larger | Dedicated or volume-mounted (500 GB+ disk) |
+| Disk | 350 GB minimum | 500 GB minimum |
 | Estimated cost | ~$0.04/hour | ~$0.08/hour |
 
-> **Important:** Docker needs space for intermediate build layers in addition to the final image. The INT8 model is ~83 GB on disk, so you need more space than for NF4. Models are downloaded directly in the final stage (no multi-stage COPY) to avoid doubling disk usage.
+> **Important:** Docker needs space for intermediate build layers in addition to the final image. The NF4 image is ~119 GB and the INT8 image is ~155 GB. Models are downloaded directly in the final stage (no multi-stage COPY) to avoid doubling disk usage, but build layers still need headroom.
 
 ### 1.2 SSH into the Server
 
@@ -124,7 +125,7 @@ This script:
 4. Builds the Docker image with bitsandbytes and the selected HunyuanImage 3.0 model baked in
 5. Pushes the image to Docker Hub
 
-Expect **60–90 minutes** for NF4 or **90–150 minutes** for INT8 (larger model download and push).
+Expect **60–90 minutes** for NF4 or **90–150 minutes** for INT8 (larger model download and push). The Docker image export step alone can take 30–40 minutes for NF4 due to the ~119 GB image size.
 
 ### 1.6 Delete the Server
 
@@ -146,7 +147,7 @@ Docker skips layers that already uploaded successfully and only retries the fail
 
 ### Alternative: Push to GitHub Container Registry
 
-GHCR handles large layers more reliably than Docker Hub. Especially recommended for INT8 (~90 GB image). To use it instead:
+GHCR handles large layers more reliably than Docker Hub. Especially recommended for INT8 (~155 GB image). To use it instead:
 
 ```bash
 echo YOUR_GITHUB_PAT | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
@@ -183,7 +184,7 @@ Go to [Settings > API Keys](https://www.runpod.io/console/serverless/user/settin
 | **GPU** | **A100 80GB** | Required — 48 GB GPUs will OOM |
 | **Min Workers** | `0` | Scales to zero when idle (no cost) |
 | **Max Workers** | `1` | Increase for higher throughput |
-| **Container Disk** | `20 GB` | Scratch space only; model is in the image |
+| **Container Disk** | `200 GB` | Must be larger than the image (~119 GB) plus scratch space |
 | **Idle Timeout** | `5` seconds | How long a warm worker waits before shutting down |
 | **FlashBoot** | Enabled (if available) | Speeds up cold starts |
 
@@ -195,7 +196,7 @@ Go to [Settings > API Keys](https://www.runpod.io/console/serverless/user/settin
 | **GPU** | **RTX 6000 Blackwell 96GB** or **H100/H200** | 80GB GPUs need `blocks_to_swap: 4-8` |
 | **Min Workers** | `0` | Scales to zero when idle (no cost) |
 | **Max Workers** | `1` | Increase for higher throughput |
-| **Container Disk** | `20 GB` | Scratch space only; model is in the image |
+| **Container Disk** | `200 GB` | Must be larger than the image (~155 GB) plus scratch space |
 | **Idle Timeout** | `5` seconds | How long a warm worker waits before shutting down |
 | **FlashBoot** | Enabled (if available) | Speeds up cold starts |
 
@@ -229,7 +230,7 @@ The first request after the endpoint is created (or after it scales to zero) tri
 - RunPod pulls the Docker image (first time only — cached after that)
 - ComfyUI starts and loads the model into GPU VRAM
 
-The first-ever cold start takes **10–30 minutes** for NF4 (~55 GB) or **20–45 minutes** for INT8 (~90 GB) due to image pull. Subsequent cold starts take **2–5 minutes** (model loading only, image is cached).
+The first-ever cold start takes **20–45 minutes** for NF4 (~119 GB) or **30–60 minutes** for INT8 (~155 GB) due to image pull. Subsequent cold starts take **2–5 minutes** (model loading only, image is cached).
 
 ### 4.2 Text-to-Image Request
 
@@ -536,8 +537,8 @@ curl -X POST "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/runsync" \
             "force_reload": false,
             "attention_impl": "sdpa",
             "moe_impl": "eager",
-            "vram_reserve_gb": 30,
-            "blocks_to_swap": 16
+            "vram_reserve_gb": 20,
+            "blocks_to_swap": 24
           },
           "class_type": "HunyuanInstructLoader",
           "_meta": { "title": "Hunyuan Instruct Loader" }
@@ -564,7 +565,7 @@ curl -X POST "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/runsync" \
             "bot_task": "image",
             "seed": -1,
             "system_prompt": "dynamic",
-            "resolution": "1024x1024 (1:1 Square)",
+            "resolution": "768x1280 (3:5 Portrait)",
             "steps": -1
           },
           "class_type": "HunyuanInstructMultiFusion",
@@ -601,7 +602,10 @@ Multi-image fusion uses significantly more VRAM than text-to-image or single-ima
 | Text-to-image | `0` | Works | Works |
 | Single image edit | `0` | Works | Works |
 | 2-image fusion | `0` | Works | May OOM — try `8` |
-| **3-image fusion** | **`16`** | **Works** | **Likely OOMs even with `16`+** |
+| **3-image fusion (1024x1024)** | **`24`+** | **Tight — may still OOM** | **Likely OOMs** |
+| **3-image fusion (768x768)** | **`16`** | **Works** | **Likely OOMs** |
+
+> **Note:** 3-image fusion at 1024x1024 has been observed to OOM on a 96GB H100 even with `blocks_to_swap: 16` (57.48 GiB allocated + 22.66 GiB requested). Reducing resolution to 768x768 or increasing `blocks_to_swap` to 24+ is recommended.
 
 > **Critical:** If you change `blocks_to_swap` after the model is already loaded, you **must** set `"force_reload": true` in the loader. The model is cached in memory — changing `blocks_to_swap` without `force_reload` has no effect.
 
@@ -636,7 +640,7 @@ Currently allocated: 44.05 GiB
 received unexpected HTTP status: 502 Bad Gateway
 ```
 
-Docker Hub's backend struggles with 50+ GB layers. Retry the push — Docker skips already-uploaded layers:
+Docker Hub's backend struggles with large layers (the NF4 model layer alone is ~48 GB compressed). Retry the push — Docker skips already-uploaded layers:
 
 ```bash
 docker push your-username/worker-comfyui:latest-hunyuan-instruct-nf4
@@ -646,11 +650,11 @@ If it keeps failing, push to GHCR instead (see [Step 2](#step-2-push-to-a-contai
 
 ### Cold Start Takes Too Long
 
-The first-ever cold start pulls the Docker image (~55 GB for NF4, ~90 GB for INT8). Subsequent cold starts only load the model (~2–5 min). To eliminate cold starts entirely, set `Min Workers: 1` (Active worker) — but this costs $2.17/hr+ continuously.
+The first-ever cold start pulls the Docker image (~119 GB for NF4, ~155 GB for INT8). Subsequent cold starts only load the model (~2–5 min). To eliminate cold starts entirely, set `Min Workers: 1` (Active worker) — but this costs $2.17/hr+ continuously.
 
 ### Endpoint Shows "Downloading" for a Long Time
 
-RunPod is pulling the Docker image. For NF4 (~55 GB) the first pull takes 10–30 minutes; for INT8 (~90 GB) it takes 20–45 minutes. This only happens once per worker node — the image is cached after that.
+RunPod is pulling the Docker image. For NF4 (~119 GB) the first pull takes 20–45 minutes; for INT8 (~155 GB) it takes 30–60 minutes. This only happens once per worker node — the image is cached after that.
 
 ### Blank Image / "Prompt executed in 0.00 seconds"
 
@@ -668,11 +672,12 @@ Currently allocated: 57.50 GiB
 Requested: 22.69 GiB
 ```
 
-Multi-image fusion uses O(N²) more VRAM than single-image operations due to the MoE dispatch_mask. For 3 images on NF4:
+Multi-image fusion uses O(N²) more VRAM than single-image operations due to the MoE dispatch_mask. Even a 96GB GPU can OOM at 1024x1024 with 3 images. For 3 images on NF4:
 
-1. Set `"blocks_to_swap": 16` (offloads ~12 GB of model weights to CPU)
-2. **Set `"force_reload": true`** — if the model was already loaded with `blocks_to_swap: 0`, the cached model won't pick up the new setting
-3. Use `"bot_task": "image"` (not `think_recaption` which uses ~28 GB for the dispatch mask alone)
+1. **Reduce resolution** — use `"768x768 (3:5 Portrait)"` or similar instead of `"1024x1024 (1:1 Square)"` to significantly reduce activation memory
+2. **Increase block swap** — set `"blocks_to_swap": 24` or higher (not just 16). Each additional block offloads ~1.2 GB to CPU
+3. **Set `"force_reload": true`** — if the model was already loaded with a different `blocks_to_swap`, the cached model won't pick up the new setting
+4. Use `"bot_task": "image"` (not `think_recaption` which uses ~28 GB for the dispatch mask alone)
 
 See [Multi-Image Fusion](#multi-image-fusion) for full details.
 
@@ -736,8 +741,8 @@ If the worker logs show `no HunyuanImage-3.0-* dirs found`, the model wasn't bak
 | `flux1-dev` | FLUX.1 dev (needs HF token) | ~20 GB | 24 GB+ |
 | `flux1-dev-fp8` | FLUX.1 dev FP8 quantized | ~15 GB | 24 GB+ |
 | `z-image-turbo` | Z-Image Turbo | ~15 GB | 24 GB+ |
-| `hunyuan-instruct-nf4` | HunyuanImage 3.0 Instruct Distil NF4 | **~55 GB** | **A100 80GB** |
-| `hunyuan-instruct-int8` | HunyuanImage 3.0 Instruct Distil INT8 | **~90 GB** | **96GB+ (RTX 6000 Blackwell)** |
+| `hunyuan-instruct-nf4` | HunyuanImage 3.0 Instruct Distil NF4 | **~119 GB** | **A100 80GB** |
+| `hunyuan-instruct-int8` | HunyuanImage 3.0 Instruct Distil INT8 | **~155 GB** | **96GB+ (RTX 6000 Blackwell)** |
 
 ---
 
